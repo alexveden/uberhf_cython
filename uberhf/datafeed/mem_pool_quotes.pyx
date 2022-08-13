@@ -1,7 +1,6 @@
 # cython: language_level=3
-# distutils: define_macros=NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION
 # distutils: sources = uberhf/include/hashmap.c uberhf/include/safestr.c
-# distutils: include_dirs = uberhf/include/
+
 from libc.string cimport strcmp, strlen, strcpy
 from libc.stdlib cimport malloc, free
 from libc.math cimport NAN, HUGE_VAL
@@ -17,7 +16,7 @@ cdef extern from "assert.h":
     # Replacing name to avoid conflict with python assert keyword!
     void cyassert "assert"(bint)
 
-cdef extern from "safestr.h":
+cdef extern from "../include/safestr.h":
     size_t strlcpy(char *dst, const char *src, size_t dsize)
 
 
@@ -25,8 +24,7 @@ cdef class MemPoolQuotes:
     """
     Memory based recent quotes cache
     """
-    def __init__(self, int pool_capacity, long magic_number, shared_mem_file = None):
-        pass
+
     def __cinit__(self, int pool_capacity, long magic_number, shared_mem_file = None):
         """
         Initializing low level Cython stuff, this method is called with the same args as __init__
@@ -42,9 +40,10 @@ cdef class MemPoolQuotes:
         self.pool_map = hmap
         self.pool_capacity = pool_capacity
         self.pool_cnt = 0
+        self.n_errors = 0
         self.magic_number = magic_number
         self.shared_mem_file = shared_mem_file
-        self.n_errors = 0
+
 
         if self.shared_mem_file is None:
             # Use a simple malloc

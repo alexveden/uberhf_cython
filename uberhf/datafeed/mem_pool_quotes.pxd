@@ -2,7 +2,7 @@ from libc.stdint cimport uint64_t, uint16_t
 
 DEF TICKER_LEN = 30
 
-cdef extern from "hashmap.h":
+cdef extern from "../include/hashmap.h":
     cdef extern struct hashmap:
         void *(*malloc)(size_t);
         void *(*realloc)(void *, size_t);

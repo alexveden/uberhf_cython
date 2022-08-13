@@ -1,18 +1,16 @@
-# distutils: include_dirs = uberhf/include/
 import unittest
 
 # cdef-classes require cimport and .pxd file!
 from libc.string cimport strcmp, strcpy
 from libc.math cimport  HUGE_VAL, isnan
 from libc.limits cimport LONG_MAX
-from uberhf.datafeed.mem_pool_quotes import MemPoolQuotes as mpq
+
 from uberhf.datafeed.mem_pool_quotes cimport MemPoolQuotes, QRec
 
 
 
 class CythonTestCase(unittest.TestCase):
-    def test_python(self):
-        py_pool = mpq(5, 22277)
+
 
     # IMPORTANT: in some reason Nose test doesn't recognize this module as a test
     def test_mem_quotes_init(self):
@@ -277,3 +275,7 @@ class CythonTestCase(unittest.TestCase):
 
         self.assertEqual(c.n_errors, 4)
         self.assertEqual(c.header.n_errors, 4)
+
+
+if __name__ == '__main__':
+    unittest.main()
