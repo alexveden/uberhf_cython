@@ -2,7 +2,7 @@ from libc.stdint cimport uint64_t, uint16_t
 
 DEF TICKER_LEN = 30
 
-cdef extern from "../include/hashmap.h":
+cdef extern from "../include/hashmap.h"  nogil:
     cdef extern struct hashmap:
         void *(*malloc)(size_t);
         void *(*realloc)(void *, size_t);
@@ -80,10 +80,10 @@ cdef class MemPoolQuotes:
 
 
     @staticmethod
-    cdef int ticker_compare(const void *a, const void *b, void *udata)
+    cdef int ticker_compare(const void *a, const void *b, void *udata) nogil
 
     @staticmethod
-    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1)
+    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
 
     cdef int quote_update(self, QRec * q)
     cdef bint quote_reset(self, char *ticker, QRec *q)

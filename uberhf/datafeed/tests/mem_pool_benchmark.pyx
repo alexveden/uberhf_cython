@@ -1,4 +1,3 @@
-
 #
 # TODO: Make a benchmark!
 #

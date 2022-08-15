@@ -1,6 +1,6 @@
 # cython: language_level=3
 # distutils: sources = uberhf/include/hashmap.c uberhf/include/safestr.c
-
+cimport cython
 from libc.string cimport strcmp, strlen, strcpy
 from libc.stdlib cimport malloc, free
 from libc.math cimport NAN, HUGE_VAL
@@ -16,10 +16,11 @@ cdef extern from "assert.h":
     # Replacing name to avoid conflict with python assert keyword!
     void cyassert "assert"(bint)
 
-cdef extern from "../include/safestr.h":
+cdef extern from "../include/safestr.h"  nogil:
     size_t strlcpy(char *dst, const char *src, size_t dsize)
 
 
+@cython.final
 cdef class MemPoolQuotes:
     """
     Memory based recent quotes cache
@@ -36,7 +37,7 @@ cdef class MemPoolQuotes:
         """
         # TODO: add pool capacity checks
         #print(sizeof(hashmap))
-        cdef hashmap * hmap = hashmap_new(sizeof(TickerIdx), pool_capacity, 0, 0,  MemPoolQuotes.ticker_hash, MemPoolQuotes.ticker_compare, NULL, NULL);
+        cdef hashmap * hmap = hashmap_new(sizeof(TickerIdx), pool_capacity, 0, 0,  &MemPoolQuotes.ticker_hash, &MemPoolQuotes.ticker_compare, NULL, NULL);
         self.pool_map = hmap
         self.pool_capacity = pool_capacity
         self.pool_cnt = 0
@@ -69,13 +70,13 @@ cdef class MemPoolQuotes:
 
 
     @staticmethod
-    cdef int ticker_compare(const void *a, const void *b, void *udata):
+    cdef int ticker_compare(const void *a, const void *b, void *udata) nogil:
         cdef TickerIdx *ta = <TickerIdx*>a
         cdef TickerIdx *tb = <TickerIdx*>b
         return strcmp(ta[0].ticker, tb[0].ticker)
 
     @staticmethod
-    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1):
+    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
         cdef TickerIdx *t = <TickerIdx*>item
         return hashmap_sip(t[0].ticker, strlen(t[0].ticker), seed0, seed1)
 
