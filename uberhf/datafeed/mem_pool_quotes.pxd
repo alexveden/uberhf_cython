@@ -85,7 +85,7 @@ cdef class MemPoolQuotes:
     @staticmethod
     cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
 
-    cdef int quote_update(self, QRec * q)
-    cdef bint quote_reset(self, char *ticker, QRec *q)
+    cdef int quote_update(self, QRec * q) nogil
+    cdef bint quote_reset(self, char *ticker, QRec *q) nogil
     cdef QRec* quote_get(self, char *ticker)
 

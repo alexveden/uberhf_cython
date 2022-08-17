@@ -1,6 +1,6 @@
 
 #define TRANSPORT_HDR_MGC 29517
-#define TRANSPORT_SENDER_SIZE 6
+#define TRANSPORT_SENDER_SIZE 5
 
 //
 // Transport error codes

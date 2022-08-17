@@ -14,7 +14,7 @@ cdef extern from "../include/uhfprotocols.h"  nogil:
 
 ctypedef struct TransportHeader:
     uint16_t magic_number
-    char sender_id[TRANSPORT_SENDER_SIZE]
+    char sender_id[TRANSPORT_SENDER_SIZE + 1]
 
 
 
@@ -30,8 +30,8 @@ cdef class Transport:
 
     cdef readonly int socket_type
 
-    cdef readonly char * transport_topic
-    cdef readonly int transport_topic_len
+    cdef readonly char transport_id[TRANSPORT_SENDER_SIZE]
+    cdef readonly int transport_id_len
 
     cdef readonly int msg_received
     cdef readonly int msg_sent
@@ -39,13 +39,10 @@ cdef class Transport:
     cdef readonly int last_error
 
     cdef int get_last_error(self)
-
     cdef char* get_last_error_str(self, int errnum)
 
     cdef int send(self, char *topic, void *data, size_t size, bint no_copy)
-
-    cdef void receive_finalize(self, void *data)
-
     cdef void * receive(self, size_t *size)
+    cdef void receive_finalize(self, void *data)
 
     cdef void close(self)

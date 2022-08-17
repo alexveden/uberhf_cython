@@ -6,7 +6,7 @@ from libc.stdlib cimport malloc, free
 from libc.math cimport NAN, HUGE_VAL
 from libc.limits cimport LONG_MAX
 from libc.signal cimport raise_, SIGTRAP
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint64_t, uint16_t
 
 DEF TICKER_LEN = 30
 DEF CRC_BEGIN = 64192
@@ -37,7 +37,7 @@ cdef class MemPoolQuotes:
         """
         # TODO: add pool capacity checks
         #print(sizeof(hashmap))
-        cdef hashmap * hmap = hashmap_new(sizeof(TickerIdx), pool_capacity, 0, 0,  &MemPoolQuotes.ticker_hash, &MemPoolQuotes.ticker_compare, NULL, NULL);
+        cdef hashmap * hmap = hashmap_new(sizeof(TickerIdx), pool_capacity, 0, 0,  MemPoolQuotes.ticker_hash, MemPoolQuotes.ticker_compare, NULL, NULL);
         self.pool_map = hmap
         self.pool_capacity = pool_capacity
         self.pool_cnt = 0
@@ -93,7 +93,7 @@ cdef class MemPoolQuotes:
         else:
             return &self.quotes[p_idx.idx_position]
 
-    cdef bint quote_reset(self, char *ticker, QRec *q):
+    cdef bint quote_reset(self, char *ticker, QRec *q) nogil:
         """
         Fills empty and valid QRec, by reference, edit q in place! All `q` values are HUGE_VAL, i.e.
         will be ignored by quote_update(), you have to set only changed values intended for updates.
@@ -130,7 +130,7 @@ cdef class MemPoolQuotes:
 
         return 1
 
-    cdef int quote_update(self, QRec * q):
+    cdef int quote_update(self, QRec * q) nogil:
         """
         Updates quotes pool / upserts new data if q.ticker doesn't exist in pool.
         
