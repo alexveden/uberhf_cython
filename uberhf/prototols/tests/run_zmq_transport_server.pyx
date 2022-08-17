@@ -7,9 +7,13 @@ from libc.stdio cimport printf
 #from zmq import Context
 import  time
 
+cdef extern from "assert.h":
+    # Replacing name to avoid conflict with python assert keyword!
+    void cassert "assert"(bint)
+
 cpdef main():
     cdef void * ctx = zmq_ctx_new()
-    transport = Transport(<uint64_t>ctx, b'tcp://*:7100', ZMQ_ROUTER, 0)
+    transport = Transport(<uint64_t>ctx, b'tcp://*:7100', ZMQ_ROUTER, b'SRV')
 
     #ctx = Context()
     #transport = Transport(<uint64_t>ctx.underlying, b'tcp://*:7100', ZMQ_REP)
@@ -26,12 +30,14 @@ cpdef main():
         if i == 0:
             t_begin = time.time()
 
+        cassert(data != NULL)
+
         # Do some work here
         #memset(buf, 0, 300)
         #memcpy(buf, data, min(data_size, 300))
 
         #printf('Received: %d bytes\n', data_size)
-        #transport.receive_finalize(data)
+        transport.receive_finalize(data)
 
         #n_sent = transport.send( b'hello', 4, no_copy=False)
         #printf('REP: %d\n', n_sent)
@@ -43,7 +49,7 @@ cpdef main():
 
     t_end = time.time()
 
-    print(f'#{i} received in {t_end-t_begin}seconds, {i/(t_end-t_begin)} msg/sec')
+    print(f'#{transport.msg_received} received / #{transport.msg_errors} erorrs in {t_end-t_begin}seconds, {i/(t_end-t_begin)} msg/sec')
 
 
     transport.close()

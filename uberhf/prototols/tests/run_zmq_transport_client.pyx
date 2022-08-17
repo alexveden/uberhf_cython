@@ -1,4 +1,4 @@
-from uberhf.prototols.transport cimport Transport
+from uberhf.prototols.transport cimport Transport, TransportHeader
 from uberhf.prototols.libzmq cimport *
 from zmq.backend.cython.context cimport Context
 from libc.stdint cimport uint64_t
@@ -7,9 +7,14 @@ from libc.stdio cimport printf
 #from zmq import Context
 import time
 
+ctypedef struct SomeMessage:
+    TransportHeader header
+
+    int data
+
 cpdef main():
     cdef void * ctx = zmq_ctx_new()
-    transport = Transport(<uint64_t>ctx, b'tcp://localhost:7100', ZMQ_DEALER, b'C')
+    transport = Transport(<uint64_t>ctx, b'tcp://localhost:7100', ZMQ_DEALER, b'CLI')
 
     #ctx = Context()
     #transport = Transport(<uint64_t>ctx.underlying, b'tcp://*:7100', ZMQ_REP)
@@ -22,8 +27,11 @@ cpdef main():
     print(f'Sending {n_messages}')
     t_begin = time.time()
 
+    cdef SomeMessage msg
+    msg.data = 123
+
     for i in range(n_messages):
-        n_sent = transport.send(<void*>b'hi', 2, no_copy=False)
+        n_sent = transport.send(NULL, &msg, sizeof(SomeMessage), no_copy=False)
         #printf('Sent: hi, %d bytes\n', n_sent)
 
         #data = transport.receive(&data_size)
@@ -31,7 +39,7 @@ cpdef main():
         #transport.receive_finalize(data)
     t_end = time.time()
 
-    print(f'#{n_messages} sent in {t_end-t_begin}seconds, {n_messages/(t_end-t_begin)} msg/sec')
+    print(f'#{transport.msg_sent} sent / #{transport.msg_errors} errs in {t_end-t_begin}seconds, {transport.msg_sent/(t_end-t_begin)} msg/sec')
 
     transport.close()
     print('Closing context')
