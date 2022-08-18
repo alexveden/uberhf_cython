@@ -47,10 +47,10 @@ cdef class Transport:
     cdef char* get_last_error_str(self, int errnum)
 
     cdef int send(self, char *topic, void *data, size_t size, bint no_copy)  nogil
-    cdef int send_set_error(self, int err_code, void * data) nogil
+    cdef int _send_set_error(self, int err_code, void * data) nogil
 
     cdef void * receive(self, size_t *size) nogil
-    cdef void * receive_set_error(self, int errcode, size_t *size, bint close_msg) nogil
+    cdef void * _receive_set_error(self, int errcode, size_t *size, bint close_msg) nogil
     cdef void receive_finalize(self, void *data)  nogil
 
     cdef void close(self) nogil

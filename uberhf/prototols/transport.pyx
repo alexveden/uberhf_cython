@@ -148,7 +148,7 @@ cdef class Transport:
 
         return zmq_strerror(errnum)
 
-    cdef int send_set_error(self, int err_code, void* free_data) nogil:
+    cdef int _send_set_error(self, int err_code, void* free_data) nogil:
         self.last_error = err_code
         self.msg_errors += 1
 
@@ -178,23 +178,23 @@ cdef class Transport:
         cdef int rc = 0
 
         if self.socket == NULL:
-            return self.send_set_error(TRANSPORT_ERR_SOCKET_CLOSED, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_SOCKET_CLOSED, data if no_copy else NULL)
 
         if data == NULL:
-            return self.send_set_error(TRANSPORT_ERR_NULL_DATA, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_NULL_DATA, data if no_copy else NULL)
 
         if size <= 0 or size < sizeof(TransportHeader):
-            return self.send_set_error(TRANSPORT_ERR_BAD_SIZE, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_BAD_SIZE, data if no_copy else NULL)
 
         # Sending dealer ID for ZMQ_ROUTER is mandatory!
         if self.socket_type == ZMQ_ROUTER and topic_or_dealer == NULL:
-            return self.send_set_error(TRANSPORT_ERR_NULL_DEALERID, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_NULL_DEALERID, data if no_copy else NULL)
 
         if topic_or_dealer != NULL:
             rc = zmq_send(self.socket, topic_or_dealer, strlen(topic_or_dealer), ZMQ_SNDMORE)
 
             if rc == -1:
-                return self.send_set_error(TRANSPORT_ERR_ZMQ, data if no_copy else NULL)
+                return self._send_set_error(TRANSPORT_ERR_ZMQ, data if no_copy else NULL)
 
 
         cdef zmq_msg_t msg
@@ -219,7 +219,7 @@ cdef class Transport:
         # Sending failure
         if rc == -1:
             # Don't free the data assuming that it's a job for ZMQ
-            return self.send_set_error(TRANSPORT_ERR_ZMQ, NULL)
+            return self._send_set_error(TRANSPORT_ERR_ZMQ, NULL)
 
         cassert(<size_t>rc == size)
 
@@ -254,7 +254,7 @@ cdef class Transport:
         self.last_msg_received_ptr = NULL
         self.last_data_received_ptr = NULL
 
-    cdef void * receive_set_error(self, int errcode, size_t *size, bint close_msg) nogil:
+    cdef void * _receive_set_error(self, int errcode, size_t *size, bint close_msg) nogil:
         self.last_error = errcode
         size[0] = 0
         self.msg_errors += 1
@@ -288,7 +288,7 @@ cdef class Transport:
 
         if self.socket == NULL:
             self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
-            return self.receive_set_error(TRANSPORT_ERR_SOCKET_CLOSED, size, 0)
+            return self._receive_set_error(TRANSPORT_ERR_SOCKET_CLOSED, size, 0)
 
         cdef int rc = 0
         cdef int msg_part = 0
@@ -302,7 +302,7 @@ cdef class Transport:
             rc = zmq_msg_recv(&self.last_msg, self.socket, 0)
             if rc == -1:
                 # ZMQ Receive error
-                return self.receive_set_error(TRANSPORT_ERR_ZMQ, size, 0)
+                return self._receive_set_error(TRANSPORT_ERR_ZMQ, size, 0)
 
             size[0] = zmq_msg_size(&self.last_msg)
 
@@ -317,17 +317,17 @@ cdef class Transport:
                 cassert(rc == 0)
 
         if self.socket_type == ZMQ_DEALER and msg_part != 1:
-            return self.receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
+            return self._receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
         elif self.socket_type == ZMQ_ROUTER and msg_part != 2:
-            return self.receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
+            return self._receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
         else:
             data = zmq_msg_data(&self.last_msg)
             if size[0] < sizeof(TransportHeader):
-                return self.receive_set_error(TRANSPORT_ERR_BAD_SIZE, size, 1)
+                return self._receive_set_error(TRANSPORT_ERR_BAD_SIZE, size, 1)
             else:
                 hdr = <TransportHeader*>data
                 if hdr.magic_number != TRANSPORT_HDR_MGC:
-                    return self.receive_set_error(TRANSPORT_ERR_BAD_HEADER, size, 1)
+                    return self._receive_set_error(TRANSPORT_ERR_BAD_HEADER, size, 1)
 
             self.last_msg_received_ptr = &self.last_msg
             self.last_data_received_ptr = data
