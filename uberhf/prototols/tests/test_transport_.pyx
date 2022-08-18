@@ -1,3 +1,4 @@
+import time
 import unittest
 import zmq
 # cdef-classes require cimport and .pxd file!
@@ -516,3 +517,258 @@ class CyTransportTestCase(unittest.TestCase):
             finally:
                 transport_s.close()
                 transport_c.close()
+
+
+    def test_simple_client_request_no_server(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef void * data
+        cdef size_t data_size
+
+        with zmq.Context() as ctx:
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_s = None
+            try:
+                msg.data = 777
+                result = transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                assert result == sizeof(TestGenericMessage)
+
+                data = transport_c.receive(&data_size)
+                assert transport_c.msg_sent == 1
+                assert transport_c.msg_received == 0
+                assert transport_c.msg_errors == 1
+                assert data == NULL
+                assert data_size == 0
+                assert transport_c.last_error == TRANSPORT_ERR_ZMQ
+                # Error codes returned from ZMQ space
+                assert transport_c.get_last_error() == zmq_errno()
+                assert transport_c.get_last_error_str(transport_c.get_last_error()) == zmq_strerror(zmq_errno()), zmq_strerror(zmq_errno())
+
+            finally:
+                transport_c.close()
+
+    def test_simple_client_request_no_server_poller(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef void * data
+        cdef size_t data_size
+
+        cdef zmq_pollitem_t poll_items[1]
+
+        with zmq.Context() as ctx:
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', socket_timeout=200)
+            transport_s = None
+
+            poll_items[0] = [transport_c.socket, 0, ZMQ_POLLIN, 0]
+
+            try:
+                msg.data = 777
+                result = transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                assert result == sizeof(TestGenericMessage)
+
+                while True:
+                    # Poll isn't affected by recv timeouts!
+                    rc = zmq_poll(poll_items, 1, 400)
+                    assert rc == 0
+                    # We must deal with timeouts on protocol levels!
+                    break
+            finally:
+                transport_c.close()
+
+    def test_simple_pub_sub(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
+            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
+
+            # Do some sleep to make sure sub process went well
+            time.sleep(0.5)
+            try:
+                msg.data = 777
+                transport_s.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                # Change of this value must not affect the received value
+                msg.data = 888
+
+                pmsg = <TestGenericMessage*>transport_c.receive(&buffer_size)
+                assert pmsg != NULL
+                assert buffer_size == sizeof(TestGenericMessage)
+                assert pmsg.data == 777  # <<<---- this still must be 777, not 888
+                assert pmsg.header.magic_number == TRANSPORT_HDR_MGC
+                assert strcmp(pmsg.header.sender_id, b'SRV') == 0
+
+                assert transport_c.last_error == 0
+                assert transport_c.last_msg_received_ptr != NULL
+                assert transport_c.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_c.receive_finalize(pmsg)
+
+                pmsg = <TestGenericMessage*>transport_c2.receive(&buffer_size)
+                assert pmsg != NULL
+                assert buffer_size == sizeof(TestGenericMessage)
+                assert pmsg.data == 777  # <<<---- this still must be 777, not 888
+                assert pmsg.header.magic_number == TRANSPORT_HDR_MGC
+                assert strcmp(pmsg.header.sender_id, b'SRV') == 0
+
+                assert transport_c2.last_error == 0
+                assert transport_c2.last_msg_received_ptr != NULL
+                assert transport_c2.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_c2.receive_finalize(pmsg)
+
+            finally:
+                transport_s.close()
+                transport_c.close()
+                transport_c2.close()
+
+    def test_simple_pub_sub_with_topic(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
+            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'test_topic_excluded')
+
+            # Do some sleep to make sure sub process went well
+            time.sleep(0.5)
+            try:
+                msg.data = 777
+
+                # transport_c - will receive because sub_topic - compares prefix!
+                transport_s.send(b'important_stuff', &msg, sizeof(TestGenericMessage), no_copy=False)
+                # Change of this value must not affect the received value
+                msg.data = 888
+
+                pmsg = <TestGenericMessage*>transport_c.receive(&buffer_size)
+                assert pmsg != NULL
+                assert buffer_size == sizeof(TestGenericMessage)
+                assert pmsg.data == 777  # <<<---- this still must be 777, not 888
+                assert pmsg.header.magic_number == TRANSPORT_HDR_MGC
+                assert strcmp(pmsg.header.sender_id, b'SRV') == 0
+
+                assert transport_c.last_error == 0
+                assert transport_c.last_msg_received_ptr != NULL
+                assert transport_c.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_c.receive_finalize(pmsg)
+
+                # Nothing to receive
+                pmsg = <TestGenericMessage*>transport_c2.receive(&buffer_size)
+                assert pmsg == NULL
+                assert transport_c2.last_error == TRANSPORT_ERR_ZMQ
+
+            finally:
+                transport_s.close()
+                transport_c.close()
+                transport_c2.close()
+
+
+    def test_simple_pub_sub_with_multi_topic(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
+            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=[b'test_topic_excluded', b'multi'])
+
+            # Do some sleep to make sure sub process went well
+            time.sleep(0.5)
+            try:
+                msg.data = 777
+
+                # transport_c - will receive because sub_topic - compares prefix!
+                transport_s.send(b'important_stuff', &msg, sizeof(TestGenericMessage), no_copy=False)
+
+                msg.data = 888
+                transport_s.send(b'multi_with_another_prefix', &msg, sizeof(TestGenericMessage), no_copy=False)
+
+                pmsg = <TestGenericMessage*>transport_c.receive(&buffer_size)
+                assert pmsg != NULL
+                assert pmsg.data == 777
+                assert strcmp(pmsg.header.sender_id, b'SRV') == 0
+
+                assert transport_c.last_error == 0
+                assert transport_c.last_msg_received_ptr != NULL
+                assert transport_c.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_c.receive_finalize(pmsg)
+
+                # Nothing to receive
+                pmsg = <TestGenericMessage*>transport_c2.receive(&buffer_size)
+                assert pmsg != NULL
+                assert pmsg.data == 888
+                transport_c2.receive_finalize(pmsg)
+
+            finally:
+                transport_s.close()
+                transport_c.close()
+                transport_c2.close()
+
+    def test_server_send_without_clients(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            try:
+                msg.data = 777
+                transport_c.close()
+                result = transport_s.send(b'CLI', &msg, sizeof(TestGenericMessage), no_copy=False)
+                assert transport_s.msg_sent == 0
+                assert transport_s.msg_received == 0
+                assert transport_s.msg_errors == 1
+
+                assert result == TRANSPORT_ERR_ZMQ
+                assert transport_s.get_last_error() == 113, transport_s.get_last_error()
+                assert transport_s.get_last_error_str(transport_s.get_last_error()) ==  b'Host unreachable'
+
+            finally:
+                transport_s.close()
+
+    def test_server_send_topic_is_mandatory(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+            #transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            try:
+                msg.data = 777
+                result = transport_s.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                assert transport_s.msg_sent == 0
+                assert transport_s.msg_received == 0
+                assert transport_s.msg_errors == 1
+                assert result == TRANSPORT_ERR_NULL_DEALERID
+                assert transport_s.get_last_error() == TRANSPORT_ERR_NULL_DEALERID
+                assert transport_s.get_last_error_str(TRANSPORT_ERR_NULL_DEALERID) == b"Dealer ID is mandatory for ZMQ_ROUTER.send()"
+
+            finally:
+                transport_s.close()
