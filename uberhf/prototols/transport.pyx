@@ -9,12 +9,16 @@ from libc.stdint cimport uint64_t
 cdef extern from "../include/safestr.h"  nogil:
     size_t strlcpy(char *dst, const char *src, size_t dsize)
 
-cdef extern from "assert.h":
+cdef extern from "assert.h" nogil:
     # Replacing name to avoid conflict with python assert keyword!
     void cassert "assert"(bint)
 
-cdef void _zmq_free_data_callback(void *data, void *hint):
+cdef void _zmq_free_data_callback(void *data, void *hint): # pragma: no cover
     # This is called by ZeroMQ internally, when sending with no_copy=True
+    #
+    # IMPORTANT: if you get bad address assertion/error in this place this means that you possibly
+    #            tried no_copy=True send on local variable address
+    #
     free(data)
 
 
@@ -108,34 +112,48 @@ cdef class Transport:
         """
         if self.last_error < -64000:
             if self.last_error == TRANSPORT_ERR_BAD_SIZE:
-                return 'Transport data has less than TransportHeader size'
+                return 'Transport data size has less than TransportHeader size'
             elif self.last_error == TRANSPORT_ERR_BAD_HEADER:
                 return 'Transport invalid header signature'
             elif self.last_error == TRANSPORT_ERR_BAD_PARTSCOUNT:
                 return 'Transport unexpected multipart count'
             elif self.last_error == TRANSPORT_ERR_SOCKET_CLOSED:
                 return 'Socket already closed'
+            elif self.last_error == TRANSPORT_ERR_NULL_DATA:
+                return "Data is NULL"
             else:
                 return 'Generic transport error'
 
         return zmq_strerror(errnum)
 
-    cdef int send(self, char *topic_or_dealer, void *data, size_t size, bint no_copy):
+    cdef int send(self, char *topic_or_dealer, void *data, size_t size, bint no_copy)  nogil:
         """
         Send data via transport
         
         :param topic_or_dealer: can be NULL (if skip), you also must set dealer sender ID, which you ge in received data header,
                                 TransportHeader.sender_id to route messages accordingly to the dealer.
                                 For PUB/SUB transports this field used as topic
-        :param data: data structure, must include space for TransportHeader (at the begining) + some useful data for protocol
+        :param data: data structure, must include space for TransportHeader (at the beginning) + some useful data for protocol
         :param size: data size
         :param no_copy: 
         :return: 
         """
         self.last_error = TRANSPORT_ERR_OK
         cdef int rc
+        if self.socket == NULL:
+            self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
+            self.msg_errors += 1
+            return TRANSPORT_ERR_SOCKET_CLOSED
 
-        cassert(size > sizeof(TransportHeader))
+        if data == NULL:
+            self.last_error = TRANSPORT_ERR_NULL_DATA
+            self.msg_errors += 1
+            return self.last_error
+
+        if size <= 0 or size < sizeof(TransportHeader):
+            self.last_error = TRANSPORT_ERR_BAD_SIZE
+            self.msg_errors += 1
+            return self.last_error
 
         # Sending transport ID for routing
         if topic_or_dealer != NULL:
@@ -151,9 +169,8 @@ cdef class Transport:
 
         if no_copy:
             if data == self.last_data_received_ptr:
-                # Trying to change data inplace, this is probably dangerous
-                # TODO: decide if this is fin
-                cassert(data != self.last_data_received_ptr)
+                # Trying to change data inplace, this is DEFINITELY dangerous
+                cassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
             rc = zmq_msg_init_data (&msg, data, size, <zmq_free_fn*>_zmq_free_data_callback, NULL)
         else:
             rc = zmq_msg_init_size (&msg, size)
@@ -171,7 +188,7 @@ cdef class Transport:
 
         return rc
 
-    cdef void receive_finalize(self, void *data):
+    cdef void receive_finalize(self, void *data)  nogil:
         """
         Clean up received data message
         
@@ -184,10 +201,10 @@ cdef class Transport:
         :return: 
         """
         # Check if not already finalized
-        cassert(self.last_msg_received_ptr != NULL)
+        cassert(self.last_msg_received_ptr != NULL) #, f'You are trying to finalize not received data or multiple receive_finalize() calls'
 
         # Check if the finalized data pointer address equal
-        cassert(self.last_data_received_ptr == data)
+        cassert (self.last_data_received_ptr == data) #, f'Make sure that you use previously received data pointer in this function'
 
         cdef int rc = zmq_msg_close(&self.last_msg)
         # The zmq_msg_close() function shall return zero if successful.
@@ -198,7 +215,7 @@ cdef class Transport:
         self.last_msg_received_ptr = NULL
         self.last_data_received_ptr = NULL
 
-    cdef void * receive(self, size_t *size):
+    cdef void * receive(self, size_t *size) nogil:
         """
         Receive a dynamically allocated message
         
@@ -214,9 +231,15 @@ cdef class Transport:
         """
         self.last_error = TRANSPORT_ERR_OK
 
+        if self.socket == NULL:
+            self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
+            size[0] = 0
+            self.msg_errors += 1
+            return NULL
+
         # Make sure that previous call called receive_finalize()
         #    or protocol calls req_finalize() when it's done!!!
-        cassert(self.last_msg_received_ptr == NULL)
+        cassert(self.last_msg_received_ptr == NULL) #, 'Make sure that previous call called receive_finalize(), before next receive()'
 
         cdef int rc = 0
         cdef int msg_part = 0
@@ -267,6 +290,7 @@ cdef class Transport:
             self.msg_errors += 1
             rc = zmq_msg_close(&self.last_msg)
             cassert(rc == 0)
+            size[0] = 0
             self.last_data_received_ptr = NULL
             self.last_msg_received_ptr = NULL
         else:

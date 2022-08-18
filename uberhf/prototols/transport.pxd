@@ -6,10 +6,12 @@ cdef extern from "../include/uhfprotocols.h"  nogil:
     const size_t TRANSPORT_SENDER_SIZE
 
     const int TRANSPORT_ERR_OK
+    const int TRANSPORT_ERR_ZMQ
     const int TRANSPORT_ERR_BAD_SIZE
     const int TRANSPORT_ERR_BAD_HEADER
     const int TRANSPORT_ERR_BAD_PARTSCOUNT
     const int TRANSPORT_ERR_SOCKET_CLOSED
+    const int TRANSPORT_ERR_NULL_DATA
 
 
 ctypedef struct TransportHeader:
@@ -41,8 +43,8 @@ cdef class Transport:
     cdef int get_last_error(self)
     cdef char* get_last_error_str(self, int errnum)
 
-    cdef int send(self, char *topic, void *data, size_t size, bint no_copy)
-    cdef void * receive(self, size_t *size)
-    cdef void receive_finalize(self, void *data)
+    cdef int send(self, char *topic, void *data, size_t size, bint no_copy)  nogil
+    cdef void * receive(self, size_t *size) nogil
+    cdef void receive_finalize(self, void *data)  nogil
 
     cdef void close(self)
