@@ -42,38 +42,42 @@ cdef class ProtocolDatasourceServer:
         self.transport = transport
         self.protocol_id = PROTOCOL_ID_NONE
 
-    cdef int rep_connect_heartbeat(self, char *sender_id, int foreign_life_id) nogil except PROTOCOL_ERR_GENERIC:
+    cdef int rep_connect_heartbeat(self, SourceState* state) nogil except PROTOCOL_ERR_GENERIC:
         cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
         msg.header.msg_type = PROTOCOL_MSGT_HEARTBEAT
         msg.header.sender_life_id = self.server_life_id
-        msg.header.foreign_life_id = foreign_life_id
+        msg.header.foreign_life_id = state.foreign_life_id
+        msg.sender_status = state.status
 
-        return self.transport.send(sender_id, msg, sizeof(HeartbeatConnectMessage), no_copy=True)
+        return self.transport.send(state.sender_id, msg, sizeof(HeartbeatConnectMessage), no_copy=True)
 
 
     cdef int on_req_connect_heartbeat(self, HeartbeatConnectMessage *msg):
-        cdef SourceState * src = <SourceState *>self.connected_clients.get(msg.header.sender_id)
-        if src == NULL:
+        cdef SourceState * state = <SourceState *>self.connected_clients.get(msg.header.sender_id)
+
+        if state == NULL:
             # Not found
-            src = <SourceState*>malloc(sizeof(SourceState))
-            strlcpy(src.sender_id, msg.header.sender_id, TRANSPORT_SENDER_SIZE + 1)
-            src.status = SourceStatus.inactive
-            src.foreign_life_id = msg.header.sender_life_id
+            state = <SourceState*>malloc(sizeof(SourceState))
+            strlcpy(state.sender_id, msg.header.sender_id, TRANSPORT_SENDER_SIZE + 1)
+            state.status = SourceStatus.inactive
+            state.foreign_life_id = msg.header.sender_life_id
             # Insert via copy
-            self.connected_clients.set(src)
-            free(src)
+            self.connected_clients.set(state)
+            free(state)
 
             # Get source state pointer, so we can edit it
-            src = <SourceState *>self.connected_clients.get(msg.header.sender_id)
-            cyassert(src != NULL)
+            state = <SourceState *>self.connected_clients.get(msg.header.sender_id)
+            cyassert(state != NULL)
         else:
-            if msg.header.sender_life_id != src.foreign_life_id:
+            if msg.header.sender_life_id != state.foreign_life_id:
                 # Possible foreign restart, lets make it re-initialize
-                src.status = SourceStatus.inactive
+                state.status = SourceStatus.inactive
                 # TODO: core.reset_datasource()
 
-        src.last_heartbeat_time_ns = datetime_nsnow()
-        return self.rep_connect_heartbeat(msg.header.sender_id, src.foreign_life_id)
+        state.last_heartbeat_time_ns = datetime_nsnow()
+
+        # Reply on heartbeat
+        return self.rep_connect_heartbeat(state)
 
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) except PROTOCOL_ERR_GENERIC:

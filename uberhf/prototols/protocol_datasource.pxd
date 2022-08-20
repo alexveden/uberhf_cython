@@ -13,10 +13,11 @@ cdef enum SourceStatus:
 
 ctypedef struct HeartbeatConnectMessage:
     TransportHeader header
-    int client_id
-    int server_id
+
+    SourceStatus sender_status
 
 ctypedef struct SourceState:
+    # Keep sender_id as first item to allow HashMapDataSources seek by string
     char sender_id[TRANSPORT_SENDER_SIZE + 1]
     int foreign_life_id
     SourceStatus status
