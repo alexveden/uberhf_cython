@@ -35,10 +35,10 @@ ctypedef struct QRec:
 
 cdef class HashMapMemPool(HashMapBase):
     @staticmethod
-    cdef int _compare(const void *a, const void *b, void *udata) nogil
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil
 
     @staticmethod
-    cdef uint64_t _hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
 
 
 cdef class MemPoolQuotes:

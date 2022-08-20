@@ -5,6 +5,14 @@ from uberhf.includes.asserts cimport cyassert
 cdef class HashMapBase:
 
     @staticmethod
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
+        cyassert(0) # Override ME!
+
+    @staticmethod
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
+        cyassert(0)  # Override ME!
+
+    @staticmethod
     cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil:
         return hashmap_sip(data, data_len, seed0, seed1)
 

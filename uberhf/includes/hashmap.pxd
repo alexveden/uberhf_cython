@@ -56,6 +56,16 @@ cdef class HashMapBase:
     cdef hashmap* _hash_map
 
     @staticmethod
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil
+
+    @staticmethod
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
+
+    # THIS must be called in child HashMap class, because just overriding is not enough
+    # def __cinit__(self):
+    #     self._new(sizeof(ItemOrStruct), self.item_hash, self.item_compare, 16)
+
+    @staticmethod
     cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil
 
     cdef void _new(self,

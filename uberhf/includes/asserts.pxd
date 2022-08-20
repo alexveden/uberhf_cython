@@ -7,6 +7,6 @@ cdef extern from "assert.h" nogil:
 
 cdef inline int cybreakpoint(bint condition) nogil:
     """
-    Breakpoint macro
+    Breakpoint macro if `condition` != 0
     """
     return raise_(SIGTRAP) if condition != 0 else 0

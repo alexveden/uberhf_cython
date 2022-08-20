@@ -18,18 +18,18 @@ DEF CRC_END = 29517
 
 cdef class HashMapMemPool(HashMapBase):
     @staticmethod
-    cdef int _compare(const void *a, const void *b, void *udata) nogil:
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
         cdef TickerIdx *ta = <TickerIdx*>a
         cdef TickerIdx *tb = <TickerIdx*>b
         return strcmp(ta[0].ticker, tb[0].ticker)
 
     @staticmethod
-    cdef uint64_t _hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
         cdef TickerIdx *t = <TickerIdx*>item
         return HashMapBase.hash_func(t[0].ticker, strlen(t[0].ticker), seed0, seed1)
 
     def __cinit__(self):
-        self._new(sizeof(TickerIdx), self._hash, self._compare, 16)
+        self._new(sizeof(TickerIdx), self.item_hash, self.item_compare, 16)
 
 
 @cython.final
