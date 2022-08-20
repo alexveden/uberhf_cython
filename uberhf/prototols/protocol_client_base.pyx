@@ -32,8 +32,8 @@ cdef class ProtocolClientBase:
     cdef int req_connect_heartbeat(self, int client_id, int server_id) nogil except PROTOCOL_ERR_GENERIC:
         cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
         msg.header.msg_type = PROTOCOL_MSGT_HEARTBEAT
-        msg.header.my_id = client_id
-        msg.header.foreign_id = server_id
+        msg.header.sender_life_id = client_id
+        msg.header.foreign_life_id = server_id
 
         msg.client_id = client_id
         msg.server_id = server_id

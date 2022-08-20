@@ -2,7 +2,7 @@ from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy, strlen, memset, strncpy
 from libc.stdio cimport printf
 from uberhf.prototols.libzmq cimport *
-from uberhf.includes.strutils cimport strlcpy
+from uberhf.includes.utils cimport strlcpy
 from uberhf.includes.asserts cimport cyassert
 from uberhf.includes.uhfprotocols cimport *
 from zmq.error import ZMQError

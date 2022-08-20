@@ -3,6 +3,7 @@ from uberhf.includes.hashmap cimport HashMapBase
 from libc.stdint cimport uint64_t, uint16_t
 from uberhf.includes.hashmap cimport HashMapBase
 from libc.string cimport strcmp, strlen, strcpy
+from .transport cimport Transport, TransportHeader
 
 cdef enum SourceStatus:
     inactive = 0
@@ -10,10 +11,16 @@ cdef enum SourceStatus:
     initializing = 2
     active = 3
 
+ctypedef struct HeartbeatConnectMessage:
+    TransportHeader header
+    int client_id
+    int server_id
+
 ctypedef struct SourceState:
     char sender_id[TRANSPORT_SENDER_SIZE + 1]
-    int foreign_id
+    int foreign_life_id
     SourceStatus status
+    long last_heartbeat_time_ns
 
 cdef class HashMapDataSources(HashMapBase):
     @staticmethod

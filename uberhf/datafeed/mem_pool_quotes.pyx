@@ -7,7 +7,7 @@ from libc.limits cimport LONG_MAX
 from libc.signal cimport raise_, SIGTRAP
 from libc.stdint cimport uint64_t, uint16_t
 
-from uberhf.includes.strutils cimport strlcpy
+from uberhf.includes.utils cimport strlcpy
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 
 
