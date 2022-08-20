@@ -3,10 +3,12 @@ import unittest
 import zmq
 # cdef-classes require cimport and .pxd file!
 from uberhf.prototols.transport cimport *
+from uberhf.prototols.libzmq cimport *
+from uberhf.includes.uhfprotocols cimport *
 from libc.stdint cimport uint64_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy
 from libc.stdlib cimport malloc, free
-from uberhf.prototols.libzmq cimport *
+
 import os
 import pytest
 

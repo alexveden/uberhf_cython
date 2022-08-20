@@ -30,14 +30,16 @@ build-debug:
 tests: build-debug
 	export PYTHONPATH=$(PROJ_ROOT):$(PYTHONPATH); python -m $(TEST_EXEC) $(p)
 
+tests-debug: build-debug
+	$(CYTOOL) debug -t $(p)
+
 run:  build-debug
 	$(CYTOOL) run uberhf/datafeed/tests/mem_pool_benchmark.pyx@main
 
 debug: build-debug
 	$(CYTOOL) debug uberhf/datafeed/tests/mem_pool_benchmark.pyx@main
 
-debug-tests: build-debug
-	$(CYTOOL) debug -t $(p)
+
 
 debug-file: build-debug
 	#$(CYTOOL) run cy_tools_samples/debugging/abort.pyx@main

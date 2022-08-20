@@ -14,4 +14,15 @@
 #define TRANSPORT_ERR_NULL_DATA -64005
 #define TRANSPORT_ERR_NULL_DEALERID -64006
 
+//
+// Unique protocol IDs
+//
 #define PROTOCOL_ID_NONE '\0'
+#define PROTOCOL_ID_TEST 'T'
+
+#define PROTOCOL_ERR_GENERIC      -55000
+#define PROTOCOL_ERR_SIZE         -55001
+#define PROTOCOL_ERR_WRONG_TYPE   -55002
+
+#define PROTOCOL_MSGT_HEARTBEAT 'H'    // Heartbeat/connect
+

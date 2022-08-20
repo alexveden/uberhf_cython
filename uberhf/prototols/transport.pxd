@@ -1,24 +1,15 @@
 from uberhf.prototols.libzmq cimport *
+from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 from libc.stdint cimport uint16_t
-
-cdef extern from "../include/uhfprotocols.h"  nogil:
-    const uint16_t TRANSPORT_HDR_MGC
-    const size_t TRANSPORT_SENDER_SIZE
-
-    const int TRANSPORT_ERR_OK
-    const int TRANSPORT_ERR_ZMQ
-    const int TRANSPORT_ERR_BAD_SIZE
-    const int TRANSPORT_ERR_BAD_HEADER
-    const int TRANSPORT_ERR_BAD_PARTSCOUNT
-    const int TRANSPORT_ERR_SOCKET_CLOSED
-    const int TRANSPORT_ERR_NULL_DATA
-    const int TRANSPORT_ERR_NULL_DEALERID
 
 
 ctypedef struct TransportHeader:
     uint16_t magic_number
     char sender_id[TRANSPORT_SENDER_SIZE + 1]
     char protocol_id
+    char msg_type
+    int my_id
+    int foreign_id
     int request_id
 
 

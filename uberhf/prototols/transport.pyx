@@ -2,19 +2,17 @@ from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy, strlen, memset, strncpy
 from libc.stdio cimport printf
 from uberhf.prototols.libzmq cimport *
+from uberhf.includes.safestr cimport strlcpy
+from uberhf.includes.asserts cimport cyassert
+from uberhf.includes.uhfprotocols cimport *
 from zmq.error import ZMQError
 from libc.stdint cimport uint64_t
 
 
-cdef extern from "../include/safestr.h"  nogil:
-    size_t strlcpy(char *dst, const char *src, size_t dsize)
-
-cdef extern from "assert.h" nogil:
-    # Replacing name to avoid conflict with python assert keyword!
-    void cassert "assert"(bint)
-
 cdef void _zmq_free_data_callback(void *data, void *hint): # pragma: no cover
     # This is called by ZeroMQ internally, when sending with no_copy=True
+    #
+    #   The `void *data` must be malloc'ed previously somewhere in the user-space code!
     #
     # IMPORTANT: if you get bad address assertion/error in this place this means that you possibly
     #            tried no_copy=True send on local variable address
@@ -38,7 +36,7 @@ cdef class Transport:
     #
     def __cinit__(self, zmq_context_ptr, socket_endpoint, socket_type, transport_id, socket_timeout=100, sub_topic=None):
         """
-        Initilized ZeroMQ transport
+        Initialized ZeroMQ transport
 
          Examples of usage:
                 cdef void * ctx = zmq_ctx_new()
@@ -155,7 +153,7 @@ cdef class Transport:
         if free_data != NULL:
             if free_data == self.last_data_received_ptr:
                 # Trying to change data inplace, this is DEFINITELY dangerous
-                cassert(free_data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
+                cyassert(free_data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
 
             # Free the data to avoid memory leaks
             free(free_data)
@@ -205,7 +203,7 @@ cdef class Transport:
         if no_copy:
             if data == self.last_data_received_ptr:
                 # Trying to change data inplace, this is DEFINITELY dangerous
-                cassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
+                cyassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
             rc = zmq_msg_init_data (&msg, data, size, <zmq_free_fn*>_zmq_free_data_callback, NULL)
         else:
             rc = zmq_msg_init_size (&msg, size)
@@ -213,7 +211,7 @@ cdef class Transport:
             memcpy(zmq_msg_data(&msg), data, size)
 
         # Data initialization failure (out of mem?)
-        cassert(rc == 0)
+        cyassert(rc == 0)
 
         rc = zmq_msg_send(&msg, self.socket, 0)
         # Sending failure
@@ -221,7 +219,7 @@ cdef class Transport:
             # Don't free the data assuming that it's a job for ZMQ
             return self._send_set_error(TRANSPORT_ERR_ZMQ, NULL)
 
-        cassert(<size_t>rc == size)
+        cyassert(<size_t>rc == size)
 
         self.msg_sent += 1
 
@@ -240,15 +238,15 @@ cdef class Transport:
         :return: 
         """
         # Check if not already finalized
-        cassert(self.last_msg_received_ptr != NULL) #, f'You are trying to finalize not received data or multiple receive_finalize() calls'
+        cyassert(self.last_msg_received_ptr != NULL) #, f'You are trying to finalize not received data or multiple receive_finalize() calls'
 
         # Check if the finalized data pointer address equal
-        cassert (self.last_data_received_ptr == data) #, f'Make sure that you use previously received data pointer in this function'
+        cyassert (self.last_data_received_ptr == data) #, f'Make sure that you use previously received data pointer in this function'
 
         cdef int rc = zmq_msg_close(&self.last_msg)
         # The zmq_msg_close() function shall return zero if successful.
         # Otherwise it shall return -1 and set errno to one of the values defined below.
-        cassert(rc == 0)
+        cyassert(rc == 0)
 
         # Clean up
         self.last_msg_received_ptr = NULL
@@ -262,7 +260,7 @@ cdef class Transport:
         self.last_msg_received_ptr = NULL
         if close_msg:
             rc = zmq_msg_close(&self.last_msg)
-            cassert(rc == 0)
+            cyassert(rc == 0)
 
         return NULL
 
@@ -284,7 +282,7 @@ cdef class Transport:
 
         # Make sure that previous call called receive_finalize()
         #    or protocol calls req_finalize() when it's done!!!
-        cassert(self.last_msg_received_ptr == NULL) #, 'Make sure that previous call called receive_finalize(), before next receive()'
+        cyassert(self.last_msg_received_ptr == NULL) #, 'Make sure that previous call called receive_finalize(), before next receive()'
 
         if self.socket == NULL:
             self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
@@ -297,7 +295,7 @@ cdef class Transport:
 
         while True:
             rc = zmq_msg_init(&self.last_msg)
-            cassert(rc == 0)
+            cyassert(rc == 0)
 
             rc = zmq_msg_recv(&self.last_msg, self.socket, 0)
             if rc == -1:
@@ -314,7 +312,7 @@ cdef class Transport:
             else:
                 #printf('%s Multipart message: %d bytes\n', self.transport_id, size[0])
                 rc = zmq_msg_close(&self.last_msg)
-                cassert(rc == 0)
+                cyassert(rc == 0)
 
         if self.socket_type == ZMQ_DEALER and msg_part != 1:
             return self._receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
@@ -344,7 +342,7 @@ cdef class Transport:
             self.socket = NULL
 
         # Not finalized receive but closing socket!
-        cassert(self.last_msg_received_ptr == NULL)
+        cyassert(self.last_msg_received_ptr == NULL)
 
     def __dealloc__(self):
         cdef int timeout = 0  # 2 seconds

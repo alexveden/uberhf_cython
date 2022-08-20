@@ -19,9 +19,11 @@ from math import nan
 import numpy as np
 cimport numpy as np
 
-from zmq cimport libzmq
+#from zmq cimport libzmq
+from uberhf.prototols cimport libzmq
 
 DEF N_QUOTES = 1000000
+
 
 
 cdef extern from "pthread.h":
@@ -65,40 +67,55 @@ cdef void * thread_quote_processor_zmq(void * zmq_ctx) nogil:
     cdef QRec q;
 
     while True:
-        data = libzmq.zmq_recvbuf(zmq_socket, &q, sizeof(QRec), 0)
+        data = libzmq.zmq_recv(zmq_socket, &q, sizeof(QRec), 0)
         #c.quote_update(&q)
-
     return NULL
 
 
 
-cdef void * thread_quote_processor_zmq(void * zmq_ctx) nogil:
-    zmq_socket = libzmq.zmq_socket(zmq_ctx, libzmq.ZMQ_SUB)
-    if zmq_socket == NULL:
-        printf('NULL socket\n')
-        return NULL
+cpdef py_thread_nogil(zmq_ctx):
+    zmq_socket_in = libzmq.zmq_socket(<void*>zmq_ctx, libzmq.ZMQ_PAIR)
 
-    zmq_result = libzmq.zmq_connect(zmq_socket, 'inproc://zmq-test')
+    if zmq_socket_in == NULL:
+        printf('NULL socket\n')
+        return
+
+    zmq_socket_out = libzmq.zmq_socket(<void *> zmq_ctx, libzmq.ZMQ_PAIR)
+    if zmq_socket_out == NULL:
+        printf('NULL socket\n')
+        return
+
+    zmq_result = libzmq.zmq_connect(zmq_socket_in, 'inproc://zmq_in')
     if zmq_result == 0:
         printf('Connection succeded\n')
     else:
         printf('Connection ERROR! %s\n', libzmq.zmq_strerror(libzmq.zmq_errno()))
-        return NULL
+        return
 
-    libzmq.zmq_setsockopt(zmq_socket, libzmq.ZMQ_SUBSCRIBE, b"", 0)
+    zmq_result = libzmq.zmq_bind(zmq_socket_out, 'inproc://zmq_out')
+    if zmq_result == 0:
+        printf('Connection succeded\n')
+    else:
+        printf('Connection ERROR! %s\n', libzmq.zmq_strerror(libzmq.zmq_errno()))
+        return
+
+    #libzmq.zmq_setsockopt(zmq_socket, libzmq.ZMQ_SUBSCRIBE, b"", 0)
+
+    print('py_thread_nogil starting nogil code')
 
     #cdef char buffer[255]
 
     #with gil:
-         # = MemPoolQuotes(N_QUOTES, 777111222)
+    c = MemPoolQuotes(N_QUOTES, 777111222)
 
     cdef QRec q;
+    with nogil:
+        while True:
+            data = libzmq.zmq_recv(zmq_socket_in, &q, sizeof(QRec), 0)
+            c.quote_update(&q)
 
-    while True:
-        data = libzmq.zmq_recvbuf(zmq_socket, &q, sizeof(QRec), 0)
-        #c.quote_update(&q)
-
-    return NULL
+           # libzmq.zmq_send(zmq_socket_out, b'DONE', 4, 0)
+    return
 
 cpdef main():
     cdef int n_unique_tickers = 10000
@@ -151,23 +168,28 @@ cpdef main():
 
     zmq_ctx = libzmq.zmq_ctx_new()
     assert zmq_ctx != NULL, zmq.strerror(zmq.zmq_errno())
-    zmq_socket = libzmq.zmq_socket(zmq_ctx, libzmq.ZMQ_PUB)
+    zmq_socket = libzmq.zmq_socket(zmq_ctx, libzmq.ZMQ_PAIR)
     assert zmq_socket != NULL, zmq.strerror(zmq.zmq_errno())
 
     #cdef void * c_sock = zmq_socket.handle
 
-    zmq_result = libzmq.zmq_bind(zmq_socket, 'inproc://zmq-test')
+    zmq_result = libzmq.zmq_bind(zmq_socket, 'inproc://zmq_in')
     assert zmq_result >= 0, zmq.strerror(zmq.zmq_errno())
 
-    cdef char buff[255]
+    zmq_socket_out = libzmq.zmq_socket(zmq_ctx, libzmq.ZMQ_PAIR)
+    assert zmq_socket_out != NULL, zmq.strerror(zmq.zmq_errno())
+    zmq_result = libzmq.zmq_connect(zmq_socket_out, 'inproc://zmq_out')
+    assert zmq_result >= 0, zmq.strerror(zmq.zmq_errno())
+
 
     cdef pthread_t thread;
-    cdef retval = pthread_create(&thread, NULL, &thread_quote_processor_zmq, zmq_ctx)
-    if retval != 0:
-        printf('pthread_create error: %s\n', strerror(errno))
-        exit(1)
+    # cdef retval = pthread_create(&thread, NULL, &thread_quote_processor_zmq, zmq_ctx)
+    # if retval != 0:
+    #     printf('pthread_create error: %s\n', strerror(errno))
+    #     exit(1)
 
-    #t1 = Thread(target=countdown, args=(COUNT / 2,))
+    t1 = Thread(target=py_thread_nogil, args=(<object>zmq_ctx,))
+    t1.start()
 
     #time.sleep(2)
 
@@ -185,7 +207,8 @@ cpdef main():
     print(f'Unique tickers: {n_unique_tickers}')
     print(f'Quotes to process: {N_QUOTES}')
     t_begin = time.time()
-
+    c = MemPoolQuotes(N_QUOTES, 777111222)
+    cdef char buff[255]
 
     for i in range(N_QUOTES):
         c.quote_reset(all_tickers[rnd_ticker[i]], &q)
@@ -195,15 +218,22 @@ cpdef main():
         q.ask_size = i
         q.bid_size = i
 
-        libzmq.zmq_sendbuf(zmq_socket, b"test", 4, libzmq.ZMQ_SNDMORE)
-        libzmq.zmq_sendbuf(zmq_socket, &q, sizeof(QRec), 0)
+        #libzmq.zmq_sendbuf(zmq_socket, b"test", 4, libzmq.ZMQ_SNDMORE)
+        libzmq.zmq_send(zmq_socket, &q, sizeof(QRec), 0)
+        #data = libzmq.zmq_recvbuf(zmq_socket_out, buff, 4, 0)
+
+
+
+    #libzmq.zmq_sendbuf(zmq_socket, b"test", 4, libzmq.ZMQ_SNDMORE)
+    #libzmq.zmq_sendbuf(zmq_socket, b"q", 1, 0)
 
     t_end = time.time()
     print(f'Processed in {t_end - t_begin}sec, {N_QUOTES / (t_end - t_begin):0.0f} quotes/sec')
     print(f'Quote Pool count: {c.pool_cnt}')
     print(f'Quote Pool errors: {c.n_errors}')
 
-    pthread_join(thread, NULL)
+    t1.join()
+    #pthread_join(thread, NULL)
 
     #
     # Mem clean

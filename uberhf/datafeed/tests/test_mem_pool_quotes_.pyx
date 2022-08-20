@@ -1,4 +1,3 @@
-# distutils: language = c++
 import unittest
 
 # cdef-classes require cimport and .pxd file!

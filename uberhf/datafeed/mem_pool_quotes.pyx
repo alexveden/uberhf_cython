@@ -1,5 +1,5 @@
 # cython: language_level=3
-# distutils: sources = uberhf/include/hashmap.c uberhf/include/safestr.c
+# distutils: sources = uberhf/includes/hashmap.c uberhf/includes/safestr.c
 cimport cython
 from libc.string cimport strcmp, strlen, strcpy
 from libc.stdlib cimport malloc, free
@@ -8,16 +8,12 @@ from libc.limits cimport LONG_MAX
 from libc.signal cimport raise_, SIGTRAP
 from libc.stdint cimport uint64_t, uint16_t
 
+from uberhf.includes.safestr cimport strlcpy
+from uberhf.includes.asserts cimport cyassert, cybreakpoint
+
 DEF TICKER_LEN = 30
 DEF CRC_BEGIN = 64192
 DEF CRC_END = 29517
-
-cdef extern from "assert.h":
-    # Replacing name to avoid conflict with python assert keyword!
-    void cyassert "assert"(bint)
-
-cdef extern from "../include/safestr.h"  nogil:
-    size_t strlcpy(char *dst, const char *src, size_t dsize)
 
 
 @cython.final
