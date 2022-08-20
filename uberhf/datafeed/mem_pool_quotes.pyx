@@ -1,7 +1,7 @@
 # cython: language_level=3
-# distutils: sources = uberhf/includes/hashmap.c uberhf/includes/safestr.c
+# distutils: sources = uberhf/includes/hashmapsrc.c uberhf/includes/safestr.c
 cimport cython
-from libc.string cimport strcmp, strlen, strcpy
+
 from libc.stdlib cimport malloc, free
 from libc.math cimport NAN, HUGE_VAL
 from libc.limits cimport LONG_MAX
@@ -11,9 +11,25 @@ from libc.stdint cimport uint64_t, uint16_t
 from uberhf.includes.safestr cimport strlcpy
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 
+
 DEF TICKER_LEN = 30
 DEF CRC_BEGIN = 64192
 DEF CRC_END = 29517
+
+cdef class HashMapMemPool(HashMapBase):
+    @staticmethod
+    cdef int _compare(const void *a, const void *b, void *udata) nogil:
+        cdef TickerIdx *ta = <TickerIdx*>a
+        cdef TickerIdx *tb = <TickerIdx*>b
+        return strcmp(ta[0].ticker, tb[0].ticker)
+
+    @staticmethod
+    cdef uint64_t _hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
+        cdef TickerIdx *t = <TickerIdx*>item
+        return HashMapBase.hash_func(t[0].ticker, strlen(t[0].ticker), seed0, seed1)
+
+    def __cinit__(self):
+        self._new(sizeof(TickerIdx), self._hash, self._compare, 16)
 
 
 @cython.final
@@ -21,6 +37,7 @@ cdef class MemPoolQuotes:
     """
     Memory based recent quotes cache
     """
+
 
     def __cinit__(self, int pool_capacity, long magic_number, shared_mem_file = None):
         """
@@ -33,8 +50,7 @@ cdef class MemPoolQuotes:
         """
         # TODO: add pool capacity checks
         #print(sizeof(hashmap))
-        cdef hashmap * hmap = hashmap_new(sizeof(TickerIdx), pool_capacity, 0, 0,  MemPoolQuotes.ticker_hash, MemPoolQuotes.ticker_compare, NULL, NULL);
-        self.pool_map = hmap
+        self.pool_map = HashMapMemPool()
         self.pool_capacity = pool_capacity
         self.pool_cnt = 0
         self.n_errors = 0
@@ -65,16 +81,7 @@ cdef class MemPoolQuotes:
 
 
 
-    @staticmethod
-    cdef int ticker_compare(const void *a, const void *b, void *udata) nogil:
-        cdef TickerIdx *ta = <TickerIdx*>a
-        cdef TickerIdx *tb = <TickerIdx*>b
-        return strcmp(ta[0].ticker, tb[0].ticker)
 
-    @staticmethod
-    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
-        cdef TickerIdx *t = <TickerIdx*>item
-        return hashmap_sip(t[0].ticker, strlen(t[0].ticker), seed0, seed1)
 
     cdef QRec* quote_get(self, char *ticker):
         cdef TickerIdx t
@@ -83,7 +90,7 @@ cdef class MemPoolQuotes:
             # Ticker name overflow, just no updates!
             return NULL
 
-        cdef TickerIdx * p_idx = <TickerIdx *> hashmap_get(self.pool_map, &t)
+        cdef TickerIdx * p_idx = <TickerIdx *> self.pool_map.get(&t)
         if p_idx == NULL:
             return NULL
         else:
@@ -165,7 +172,7 @@ cdef class MemPoolQuotes:
         #
         # C-struct trick here. QRec and TickerIdx both have `char ticker[TICKER_LEN]`
         #   as first element, which is used for hashing and ticker name comparison!
-        cdef TickerIdx * p_idx = <TickerIdx*>hashmap_get(self.pool_map, q)
+        cdef TickerIdx * p_idx = <TickerIdx*> self.pool_map.get(q)
 
         if p_idx == NULL:
             if self.pool_cnt == self.pool_capacity:
@@ -190,7 +197,7 @@ cdef class MemPoolQuotes:
             t.idx_position = self.header.count
             self.header.count += 1
             self.pool_cnt += 1
-            hashmap_set(self.pool_map, &t)
+            self.pool_map.set(&t)
 
             self.quote_reset(q.ticker, &def_q)
             # Setting default but invalid values
@@ -238,9 +245,6 @@ cdef class MemPoolQuotes:
             # TODO: implement shared file deallocation
             assert False
 
-        hashmap_free(self.pool_map)
-
-        #raise_(SIGTRAP)
         self.header = NULL
         self.quotes = NULL
         self.pool_buffer = NULL

@@ -3,7 +3,10 @@
 
 from libc.stdint cimport uint64_t, uint16_t
 
-cdef extern from "hashmap.h"  nogil:
+cdef extern from "hashmapsrc.h"  nogil:
+    ctypedef uint64_t item_hash_func(const void *item, uint64_t seed0, uint64_t seed1)
+    ctypedef int item_compare_func(const void *a, const void *b, void *udata)
+
     cdef extern struct hashmap:
         void *(*malloc)(size_t);
         void *(*realloc)(void *, size_t);
@@ -28,14 +31,43 @@ cdef extern from "hashmap.h"  nogil:
         void *edata;
 
     uint64_t hashmap_sip(const void *data, size_t len, uint64_t seed0, uint64_t seed1)
-    void hashmap_free(hashmap * map)
+
     hashmap * hashmap_new(size_t elsize,
                           size_t cap,
                           uint64_t seed0,
                           uint64_t seed1,
-                          uint64_t (*hash)(const void *item, uint64_t seed0, uint64_t seed1),
-                          int (*compare)(const void *a, const void *b, void *udata),
+                          uint64_t (*hash)(const void *item,
+                                           uint64_t seed0, uint64_t seed1),
+                          int (*compare)(const void *a, const void *b,
+                                         void *udata),
                           void (*elfree)(void *item),
                           void *udata)
-    void *hashmap_set(hashmap * map, const  void *item);
-    void *hashmap_get(hashmap * map, const  void *item);
+    void hashmap_free(hashmap * map)
+
+    void * hashmap_set(hashmap * map, const  void *item)
+    void * hashmap_get(hashmap * map, const  void *item)
+    void hashmap_clear(hashmap *map, bint update_cap)
+    void * hashmap_delete(hashmap *map, void *item)
+    size_t hashmap_count(hashmap * map)
+    bint hashmap_iter(hashmap *map, size_t *i, void **item)
+
+
+cdef class HashMapBase:
+    cdef hashmap* _hash_map
+
+    @staticmethod
+    cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil
+
+    cdef void _new(self,
+                   size_t item_size,
+                   uint64_t (*item_hash_f)(const void *item, uint64_t seed0, uint64_t seed1) nogil,
+                   int (*item_compare_f)(const void *a, const void *b, void *udata) nogil,
+                   size_t capacity) nogil
+
+    cdef void* set(self, void *item)  nogil
+    cdef void* get(self, void *item)  nogil
+    cdef size_t count(self)  nogil
+    cdef void clear(self)  nogil
+    cdef void* delete(self, void *item)  nogil
+    cdef bint iter(self, size_t *i, void **item)  nogil
+

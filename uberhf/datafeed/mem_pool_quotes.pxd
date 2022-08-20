@@ -1,5 +1,6 @@
 from libc.stdint cimport uint64_t, uint16_t
-from uberhf.includes.hashmap cimport *
+from uberhf.includes.hashmap cimport HashMapBase
+from libc.string cimport strcmp, strlen, strcpy
 DEF TICKER_LEN = 30
 
 
@@ -31,24 +32,27 @@ ctypedef struct QRec:
     uint16_t crc_e
 
 
+
+cdef class HashMapMemPool(HashMapBase):
+    @staticmethod
+    cdef int _compare(const void *a, const void *b, void *udata) nogil
+
+    @staticmethod
+    cdef uint64_t _hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
+
+
 cdef class MemPoolQuotes:
     cdef readonly int pool_capacity
     cdef readonly int pool_cnt
     cdef readonly int n_errors
     cdef readonly long magic_number
     cdef readonly object shared_mem_file
+    cdef HashMapMemPool pool_map
 
     cdef QPoolHeader * header
     cdef QRec * quotes
     cdef void * pool_buffer
-    cdef hashmap * pool_map
 
-
-    @staticmethod
-    cdef int ticker_compare(const void *a, const void *b, void *udata) nogil
-
-    @staticmethod
-    cdef uint64_t ticker_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
 
     cdef int quote_update(self, QRec * q) nogil
     cdef bint quote_reset(self, char *ticker, QRec *q) nogil
