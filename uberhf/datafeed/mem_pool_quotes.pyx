@@ -1,5 +1,4 @@
 # cython: language_level=3
-# distutils: sources = uberhf/includes/hashmapsrc.c uberhf/includes/safestr.c
 cimport cython
 
 from libc.stdlib cimport malloc, free
@@ -8,7 +7,7 @@ from libc.limits cimport LONG_MAX
 from libc.signal cimport raise_, SIGTRAP
 from libc.stdint cimport uint64_t, uint16_t
 
-from uberhf.includes.safestr cimport strlcpy
+from uberhf.includes.strutils cimport strlcpy
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 
 
