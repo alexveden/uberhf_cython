@@ -1,3 +1,11 @@
+//
+// GLOBAL MODULES ID (typically it's used only in lifetime number generation for a clarity sake)
+// MUST be between 1 and 40
+#define MODULE_ID_TEST 40
+#define MODULE_ID_UHFEED 10
+#define MODULE_ID_ORDER_ROUTER 20
+
+
 
 #define TRANSPORT_HDR_MGC 29517
 #define TRANSPORT_SENDER_SIZE 5
@@ -19,10 +27,9 @@
 //
 #define PROTOCOL_ID_NONE '\0'
 #define PROTOCOL_ID_TEST 'T'
+#define PROTOCOL_ID_DATASOURCE 'S'
 
 #define PROTOCOL_ERR_GENERIC      -55000
 #define PROTOCOL_ERR_SIZE         -55001
 #define PROTOCOL_ERR_WRONG_TYPE   -55002
-
-#define PROTOCOL_MSGT_HEARTBEAT 'H'    // Heartbeat/connect
 

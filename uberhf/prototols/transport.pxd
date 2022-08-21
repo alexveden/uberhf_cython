@@ -8,8 +8,8 @@ ctypedef struct TransportHeader:
     char sender_id[TRANSPORT_SENDER_SIZE + 1]
     char protocol_id
     char msg_type
-    int sender_life_id
-    int foreign_life_id
+    unsigned int sender_life_id
+    unsigned int foreign_life_id
     int request_id
 
 

@@ -6,13 +6,12 @@ from zmq.error import ZMQError
 from libc.stdint cimport uint64_t
 from .transport cimport Transport, TransportHeader
 from uberhf.includes.uhfprotocols cimport *
-from uberhf.includes.utils cimport strlcpy, datetime_nsnow
+from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id
 from uberhf.includes.asserts cimport cyassert
 from .protocol_datasource cimport HeartbeatConnectMessage, SourceStatus, SourceState
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 
-
-
+DEF MSGT_HEARTBEAT = b'H'
 
 cdef class HashMapDataSources(HashMapBase):
     @staticmethod
@@ -30,21 +29,58 @@ cdef class HashMapDataSources(HashMapBase):
         self._new(sizeof(SourceState), self.item_hash, self.item_compare, 16)
 
 
-cdef class ProtocolDatasourceServer:
-    cdef char protocol_id
-    cdef Transport transport
-    cdef readonly object core
-    cdef int server_life_id
-    cdef HashMapDataSources connected_clients
+cdef class ProtocolDatasourceClient:
 
     def __cinit__(self, Transport transport, object core):
         self.core = core
         self.transport = transport
-        self.protocol_id = PROTOCOL_ID_NONE
+        self.protocol_id = PROTOCOL_ID_DATASOURCE
+        self.client_life_id = gen_lifetime_id(MODULE_ID_UHFEED)
+        self.server_life_id = 0
+        self.status = SourceStatus.inactive
 
-    cdef int rep_connect_heartbeat(self, SourceState* state) nogil except PROTOCOL_ERR_GENERIC:
+    cdef int req_connect_heartbeat(self):
         cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
-        msg.header.msg_type = PROTOCOL_MSGT_HEARTBEAT
+        msg.header.msg_type = MSGT_HEARTBEAT
+        msg.header.sender_life_id = self.client_life_id
+        msg.header.foreign_life_id = self.server_life_id
+        msg.sender_status = self.status
+
+        return self.transport.send(NULL, msg, sizeof(HeartbeatConnectMessage), no_copy=True)
+
+
+    cdef int on_rep_connect_heartbeat(self, HeartbeatConnectMessage *msg):
+        self.server_life_id = msg.header.foreign_life_id
+        self.status = msg.sender_status
+
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) except PROTOCOL_ERR_GENERIC:
+        cdef int test = SourceStatus.connecting
+
+        cdef TransportHeader * hdr = <TransportHeader *> msg
+
+        if hdr.protocol_id != self.protocol_id:
+            # Protocol doesn't match
+            return 0
+
+        if hdr.msg_type == MSGT_HEARTBEAT:
+            if msg_size != sizeof(HeartbeatConnectMessage):
+                return PROTOCOL_ERR_SIZE
+
+            return self.on_rep_connect_heartbeat(<HeartbeatConnectMessage*> msg)
+        else:
+            return PROTOCOL_ERR_WRONG_TYPE
+
+cdef class ProtocolDatasourceServer:
+
+    def __cinit__(self, Transport transport, object core):
+        self.core = core
+        self.transport = transport
+        self.protocol_id = PROTOCOL_ID_DATASOURCE
+        self.server_life_id = gen_lifetime_id(MODULE_ID_UHFEED)
+
+    cdef int rep_connect_heartbeat(self, SourceState* state) except PROTOCOL_ERR_GENERIC:
+        cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
+        msg.header.msg_type = MSGT_HEARTBEAT
         msg.header.sender_life_id = self.server_life_id
         msg.header.foreign_life_id = state.foreign_life_id
         msg.sender_status = state.status
@@ -59,7 +95,7 @@ cdef class ProtocolDatasourceServer:
             # Not found
             state = <SourceState*>malloc(sizeof(SourceState))
             strlcpy(state.sender_id, msg.header.sender_id, TRANSPORT_SENDER_SIZE + 1)
-            state.status = SourceStatus.inactive
+            state.status = SourceStatus.connecting
             state.foreign_life_id = msg.header.sender_life_id
             # Insert via copy
             self.connected_clients.set(state)
@@ -92,7 +128,7 @@ cdef class ProtocolDatasourceServer:
             # Protocol doesn't match
             return 0
 
-        if hdr.msg_type == PROTOCOL_MSGT_HEARTBEAT:
+        if hdr.msg_type == MSGT_HEARTBEAT:
             if msg_size != sizeof(HeartbeatConnectMessage):
                 return PROTOCOL_ERR_SIZE
 

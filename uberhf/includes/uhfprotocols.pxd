@@ -1,6 +1,10 @@
 from libc.stdint cimport uint16_t
 
 cdef extern from "uhfprotocols.h"  nogil:
+    const int MODULE_ID_UHFEED
+    const int MODULE_ID_ORDER_ROUTER
+    const int MODULE_ID_TEST
+
     const uint16_t TRANSPORT_HDR_MGC
     const size_t TRANSPORT_SENDER_SIZE
 
@@ -18,6 +22,7 @@ cdef extern from "uhfprotocols.h"  nogil:
     #
     const char PROTOCOL_ID_NONE
     const char PROTOCOL_ID_TEST
+    const char PROTOCOL_ID_DATASOURCE
 
     #
     # Error codes
@@ -25,8 +30,3 @@ cdef extern from "uhfprotocols.h"  nogil:
     const int PROTOCOL_ERR_GENERIC
     const int PROTOCOL_ERR_SIZE
     const int PROTOCOL_ERR_WRONG_TYPE
-
-    #
-    # MSG Types
-    #
-    const char PROTOCOL_MSGT_HEARTBEAT

@@ -22,10 +22,10 @@ build-production:
 	$(CYTOOL) build
 
 build:
-	$(CYTOOL) build --debug --annotate
+	$(CYTOOL) -vvvv build --debug --annotate
 
 build-debug:
-	$(CYTOOL) build --debug --annotate
+	$(CYTOOL) -vvvv build --debug --annotate
 
 tests: build-debug
 	export PYTHONPATH=$(PROJ_ROOT):$(PYTHONPATH); python -m $(TEST_EXEC) $(p)
