@@ -27,6 +27,7 @@ cdef class Transport:
 
     cdef readonly char transport_id[TRANSPORT_SENDER_SIZE]
     cdef readonly int transport_id_len
+    cdef bint always_send_copy
 
     cdef readonly int msg_received
     cdef readonly int msg_sent

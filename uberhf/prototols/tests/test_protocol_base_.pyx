@@ -116,8 +116,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_s = None
             transport_c = None
             try:
-                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
                 ps = ProtocolBase(True, 11, transport_s)
                 pc = ProtocolBase(False, 22, transport_c)

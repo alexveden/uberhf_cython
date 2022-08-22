@@ -34,7 +34,7 @@ cdef class Transport:
     #     """
     #     pass
     #
-    def __cinit__(self, zmq_context_ptr, socket_endpoint, socket_type, transport_id, socket_timeout=100, sub_topic=None):
+    def __cinit__(self, zmq_context_ptr, socket_endpoint, socket_type, transport_id, socket_timeout=100, sub_topic=None, always_send_copy=False):
         """
         Initialized ZeroMQ transport
 
@@ -51,6 +51,8 @@ cdef class Transport:
         :param transport_id: unique transport ID byte-string (5 MAX)
         :param socket_timeout: socket sync receive/send timeout (this typically does not affect zmq_poll!)
         :param sub_topic:
+        :param always_send_copy: (for testing purposes), make always send a copy, because in unit test environment or coverage it could be a
+                                  collision between Pytho No-GIL mode and ZMQ Free
         :return:
         """
         self.context = <void*>(<uint64_t>zmq_context_ptr)
@@ -73,6 +75,7 @@ cdef class Transport:
 
         self.socket_type = socket_type
         self.socket = zmq_socket(self.context, self.socket_type)
+        self.always_send_copy = always_send_copy
 
         if self.socket == NULL:
             raise ZMQError()
@@ -200,7 +203,7 @@ cdef class Transport:
         hdr.magic_number = TRANSPORT_HDR_MGC
         strlcpy(hdr.sender_id, self.transport_id, TRANSPORT_SENDER_SIZE + 1)
 
-        if no_copy:
+        if no_copy and not self.always_send_copy:
             if data == self.last_data_received_ptr:
                 # Trying to change data inplace, this is DEFINITELY dangerous
                 cyassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
@@ -209,6 +212,10 @@ cdef class Transport:
             rc = zmq_msg_init_size (&msg, size)
             # Using zmq_msg_data(&msg) as in example: http://api.zeromq.org/master:zmq-msg-send
             memcpy(zmq_msg_data(&msg), data, size)
+            if no_copy:
+                # When no_copy and self.always_send_copy, we must free memory immediately
+                # This is typically used for unit testing mode / coverage to avoid seg faults when NO-GIL at _zmq_free_data_callback
+                free(data)
 
         # Data initialization failure (out of mem?)
         cyassert(rc == 0)
