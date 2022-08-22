@@ -1,0 +1,87 @@
+# Simple protocol definition trying to mimic https://zguide.zeromq.org/docs/chapter7/#Using-ABNF
+#
+#
+protocol:
+  class: protocol_datasource
+  inherits: protocol_base
+  description: Base protocol for incoming raw data for UHFeed
+  socket: ZMQ_ROUTER, ZMQ_DEALER
+
+states:
+  - inactive        # Client/server just launched or shutdown due error
+  - connecting      # Client initialized the connection
+  - initializing    # Client performs initialization routing specific for a child protocol
+  - active          # Client initialized and allowed sending regular commands of a child protocol
+
+
+
+
+commands:
+  connect:
+    inherits: protocol_base
+
+  initialize:
+    initiator: client
+    description: registering instrument incoming feed in UHFeed core
+    required: state.connecting
+    server_reply: confirms each individual request
+    transition:
+      on_success: state.initializing
+      on_error: state.inactive (on critical)
+      on_instrument_reject: state.initializing (for minor errors, but exlcude them from feed)
+
+  activate:
+    inherits: protocol_base
+
+  heartbeat:
+    inherits: protocol_base
+
+  emit_quote:
+    initiator: client
+    description: sends quote update for bid/ask/last for registered instruments
+    required: state.active
+    server_reply: no reply, but drops connection if error
+
+  emit_instrument_info:
+    initiator: client
+    description: sends generic information update on instruments
+    required: state.active
+    server_reply: no reply, but drops connection if error
+
+  emit_status:
+    initiator: client
+    description: sends information about exchange feed status / delays / health / trading session
+    required: state.active
+    server_reply: no reply, but drops connection if error
+
+
+command_handlers:
+  on_emit_quote:
+    side: server
+    description: new quote from the datasource, the server will update core
+    required: state.active
+    client_request: quote structure
+    server_reply: nothing
+    server_action: call core method for in-mem quote update
+    transition:
+      on_error: state.inactive (on critical)
+
+  on_emit_instrument_info:
+    side: server
+    description: new instrument info from the datasource, the server will update core
+    required: state.active
+    client_request: quote structure
+    server_reply: nothing
+    server_action: call core method for instrument info update
+    transition:
+      on_error: state.inactive (on critical)
+
+  on_emit_status:
+    side: server
+    description: new source status from the datasource, the server will update core
+    required: state.active
+    client_request: quote structure
+    server_reply: nothing
+    server_action: call core method for status update
+    transition:
+      on_error: state.inactive (on critical)

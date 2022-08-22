@@ -110,7 +110,7 @@ cdef inline unsigned int gen_lifetime_id(int module_id):
 
     cdef tm *curr_time = localtime(&spec.tv_sec)
     cdef int rnd = random_int(1, 99)
+    cyassert(rnd >= 1 and rnd <= 99)
 
     # 4294967295= mmHHMMSSrr
-    cdef result =  100000000 * module_id + 1000000 * curr_time.tm_hour + 10000 * curr_time.tm_min + 100 * curr_time.tm_sec + rnd
-    return result
+    return 100000000 * module_id + 1000000 * curr_time.tm_hour + 10000 * curr_time.tm_min + 100 * curr_time.tm_sec + rnd

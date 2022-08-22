@@ -119,9 +119,9 @@ class CyUtilsTestCase(unittest.TestCase):
     def test_gen_lifetime_id(self):
         cdef long now = datetime_nsnow()
         dt = datetime.datetime.now()
-        cdef unsigned int ltid = gen_lifetime_id(12)
+        cdef unsigned int ltid = gen_lifetime_id(40)
 
-        self.assertEqual(<unsigned int>(ltid/100), (100000000 * 12 + 1000000*dt.hour+ 10000 * dt.minute + 100 * dt.second)/100)
+        self.assertEqual(<unsigned int>(ltid/100), (100000000 * 40 + 1000000*dt.hour+ 10000 * dt.minute + 100 * dt.second)/100)
         self.assertGreater(<unsigned int> (ltid % 100), 0)
 
 

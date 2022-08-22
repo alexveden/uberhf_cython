@@ -13,22 +13,6 @@ from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 
 DEF MSGT_HEARTBEAT = b'H'
 
-cdef class HashMapDataSources(HashMapBase):
-    @staticmethod
-    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
-        cdef SourceState *ta = <SourceState*>a
-        cdef SourceState *tb = <SourceState*>b
-        return strcmp(ta[0].sender_id, tb[0].sender_id)
-
-    @staticmethod
-    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
-        cdef SourceState *t = <SourceState*>item
-        return HashMapBase.hash_func(t[0].sender_id, strlen(t[0].sender_id), seed0, seed1)
-
-    def __cinit__(self):
-        self._new(sizeof(SourceState), self.item_hash, self.item_compare, 16)
-
-
 cdef class ProtocolDatasourceClient:
 
     def __cinit__(self, Transport transport, object core):
@@ -42,15 +26,15 @@ cdef class ProtocolDatasourceClient:
     cdef int req_connect_heartbeat(self):
         cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
         msg.header.msg_type = MSGT_HEARTBEAT
-        msg.header.sender_life_id = self.client_life_id
-        msg.header.foreign_life_id = self.server_life_id
+        msg.header.server_life_id = self.client_life_id
+        msg.header.client_life_id = self.server_life_id
         msg.sender_status = self.status
 
         return self.transport.send(NULL, msg, sizeof(HeartbeatConnectMessage), no_copy=True)
 
 
     cdef int on_rep_connect_heartbeat(self, HeartbeatConnectMessage *msg):
-        self.server_life_id = msg.header.foreign_life_id
+        self.server_life_id = msg.header.client_life_id
         self.status = msg.sender_status
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) except PROTOCOL_ERR_GENERIC:
@@ -81,8 +65,8 @@ cdef class ProtocolDatasourceServer:
     cdef int rep_connect_heartbeat(self, SourceState* state) except PROTOCOL_ERR_GENERIC:
         cdef HeartbeatConnectMessage *msg = <HeartbeatConnectMessage*> malloc(sizeof(HeartbeatConnectMessage))
         msg.header.msg_type = MSGT_HEARTBEAT
-        msg.header.sender_life_id = self.server_life_id
-        msg.header.foreign_life_id = state.foreign_life_id
+        msg.header.server_life_id = self.server_life_id
+        msg.header.client_life_id = state.foreign_life_id
         msg.sender_status = state.status
 
         return self.transport.send(state.sender_id, msg, sizeof(HeartbeatConnectMessage), no_copy=True)
@@ -96,7 +80,7 @@ cdef class ProtocolDatasourceServer:
             state = <SourceState*>malloc(sizeof(SourceState))
             strlcpy(state.sender_id, msg.header.sender_id, TRANSPORT_SENDER_SIZE + 1)
             state.status = SourceStatus.connecting
-            state.foreign_life_id = msg.header.sender_life_id
+            state.foreign_life_id = msg.header.server_life_id
             # Insert via copy
             self.connected_clients.set(state)
             free(state)
@@ -105,7 +89,7 @@ cdef class ProtocolDatasourceServer:
             state = <SourceState *>self.connected_clients.get(msg.header.sender_id)
             cyassert(state != NULL)
         else:
-            if msg.header.sender_life_id != state.foreign_life_id:
+            if msg.header.server_life_id != state.foreign_life_id:
                 # Possible foreign restart, lets make it re-initialize
                 state.status = SourceStatus.inactive
                 # TODO: core.reset_datasource()

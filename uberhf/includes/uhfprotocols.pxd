@@ -1,5 +1,7 @@
 from libc.stdint cimport uint16_t
 
+ctypedef enum ProtocolStatus: UHF_INACTIVE, UHF_CONNECTING, UHF_INITIALIZING, UHF_ACTIVE
+
 cdef extern from "uhfprotocols.h"  nogil:
     const int MODULE_ID_UHFEED
     const int MODULE_ID_ORDER_ROUTER
@@ -23,6 +25,7 @@ cdef extern from "uhfprotocols.h"  nogil:
     const char PROTOCOL_ID_NONE
     const char PROTOCOL_ID_TEST
     const char PROTOCOL_ID_DATASOURCE
+    const char PROTOCOL_ID_BASE
 
     #
     # Error codes
@@ -30,3 +33,4 @@ cdef extern from "uhfprotocols.h"  nogil:
     const int PROTOCOL_ERR_GENERIC
     const int PROTOCOL_ERR_SIZE
     const int PROTOCOL_ERR_WRONG_TYPE
+    const int PROTOCOL_ERR_WRONG_ORDER

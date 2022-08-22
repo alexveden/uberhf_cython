@@ -1,0 +1,135 @@
+# Simple protocol definition trying to mimic https://zguide.zeromq.org/docs/chapter7/#Using-ABNF
+#
+#
+protocol:
+  class: protocol_base
+  inherits: None
+  description: Base protocol for all UberHF modules based on ZeroMQ
+  socket: ZMQ_ROUTER, ZMQ_DEALER
+
+states:
+  - inactive        # Client/server just launched or shutdown due error
+  - connecting      # Client initialized the connection
+  - initializing    # Client performs initialization routing specific for a child protocol
+  - active          # Client initialized and allowed sending regular commands of a child protocol
+
+
+commands:
+  connect:
+    initiator: client
+    description: client registers new connection
+    required: state.inactive
+    server_reply: server life id
+    transition:
+      on_success: state.connecting
+      on_error: state.inactive
+
+
+  initialize:
+    initiator: client
+    description: initialization of client/server connection
+    required: state.connecting, state.initializing (allow multiple)
+    server_reply: simple confirmation
+    transition:
+      on_success: state.initializing
+      on_error: state.inactive
+
+
+  activate:
+    initiator: client
+    description: finishing initialization of the client
+    required: state.initializing
+    server_reply: simple confirmation
+    transition:
+      on_success: state.active
+      on_error: state.inactive
+
+  heartbeat:
+    initiator: client
+    required: state.active
+    description: periodic command for keeping alive
+    server_reply: server life id or error
+    transition:
+      on_success: state.active
+      on_error: state.inactive
+    errors:
+      - server/client life id mismatch
+      - incorrect message length / format
+      - socket timeout
+
+command_handlers:
+  on_request_connect:
+    side: server
+    description: handling incoming connections
+    required: state.inactive
+    client_request: client life id, client sender id
+    server_reply: server life id
+    transition:
+      on_success: state.connecting
+      on_error: state.inactive
+
+  on_reply_connect:
+    side: client
+    description: handling response from server on connection
+    required: state.inactive
+    server_reply: server life id
+    transition:
+      on_success: state.connecting
+      on_error: state.inactive
+
+  on_request_initialize:
+    side: server
+    description: handling incoming initialization (this method intended for overriding)
+    required: state.connecting
+    client_request: some arbitrary message depending on child protocol
+    server_reply: server confirms of reject particular request by id
+    transition:
+      on_success: state.initializing
+      on_error: state.inactive
+
+  on_reply_initialize:
+    side: client
+    description: handling individual initialization replies
+    required: state.initializing
+    server_reply: server confirms of reject particular request by id
+    transition:
+      on_success: state.initializing
+      on_error: state.inactive
+
+  on_request_activate:
+    side: server
+    description: initialization is done, client ready to work
+    required: state.initializing
+    client_request: simple confirmation message
+    server_reply: server confirms or reject total activation of the client
+    transition:
+      on_success: state.active
+      on_error: state.inactive
+
+  on_reply_activate:
+    side: client
+    description:  server corfirms or reject client activation
+    required: state.initializing
+    server_reply: server confirms or reject total activation of the client
+    transition:
+      on_success: state.active
+      on_error: state.inactive
+
+  on_request_heartbeat:
+    side: server
+    description: check if connection is up, confirming if all is good
+    required: state.active
+    client_request: server life id, client life id
+    server_reply: server life id, client life id - inactive if mismatch
+    transition:
+      on_success: state.active
+      on_error: state.inactive
+
+  on_reply_heartbeat:
+    side: client
+    description:  check if connection is up, confirming if all is good
+    required: state.active
+    server_reply: server confirms if server life id, client life id are matched
+    transition:
+      on_success: state.active
+      on_error: state.inactive

@@ -8,7 +8,7 @@ cdef class HashMap:
 
     Override __cinit__, item_compare, item_hash for customization!
     """
-    def __cinit__(self, item_size, min_capacity=16):
+    def __cinit__(self, int item_size, min_capacity=16):
         self._new(item_size, HashMap.item_hash, HashMap.item_compare, min_capacity)
 
     @staticmethod
@@ -28,7 +28,7 @@ cdef class HashMap:
                    uint64_t (*item_hash_f)(const void *item, uint64_t seed0, uint64_t seed1) nogil,
                    int (*item_compare_f)(const void *a, const void *b, void *udata) nogil,
                    size_t capacity) nogil:
-
+        self.item_size = item_size
         self._hash_map = hashmap_new(item_size,
                                      capacity,
                                      641234,
@@ -119,7 +119,15 @@ cdef class HashMap:
         //
         // The function returns true if an item was retrieved; false if the end of the
         // iteration has been reached.
-        :param i: 
+        
+        Example:
+            cdef size_t i = 0
+            cdef void * hm_data = NULL
+            while hm.iter(&i, &hm_data):
+                ps = <Struct1*> hm_data
+        
+        Data is unordered
+        :param i: must be 0 at the beginning of the loop, represents internal hashmap index (not sequential 0..N!)
         :param item: 
         :return: 
         """
@@ -130,4 +138,5 @@ cdef class HashMap:
     def __dealloc__(self):
         if self._hash_map != NULL:
             hashmap_free(self._hash_map)
+            self._hash_map = NULL
 
