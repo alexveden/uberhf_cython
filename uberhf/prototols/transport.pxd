@@ -34,8 +34,8 @@ cdef class Transport:
     cdef readonly int msg_errors
     cdef readonly int last_error
 
-    cdef int get_last_error(self)
-    cdef char* get_last_error_str(self, int errnum)
+    cdef int get_last_error(self) nogil
+    cdef const char* get_last_error_str(self, int errnum) nogil
 
     cdef int send(self, char *topic, void *data, size_t size, bint no_copy)  nogil
     cdef int _send_set_error(self, int err_code, void * data) nogil

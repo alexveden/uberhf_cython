@@ -58,26 +58,22 @@ class CyUtilsTestCase(unittest.TestCase):
 
     def test_random_int(self):
         random_seed(7770912)
-        cdef double prev_rndom = -1
         cdef double r = 0
-        cdef bint has_lo = 0
-        cdef bint has_hi = 0
 
-        for i in range(10000000):
+        for i in range(100000):
             r = random_int(0, 100)
+            assert r >= 0
+            assert r < 100
 
-            if i > 0:
-                assert r >= 0
-                assert r < 100
-                if r == 0:
-                    has_lo = 1
-                if r == 100:
-                    has_hi = 1
-
-            prev_rndom = r
-
-        assert has_hi == 0
-        assert has_lo == 1
+        random_seed(941342)
+        for i in range(100000):
+            r = random_int(-100, 0)
+            assert r >= -100
+            assert r < 0
+        random_seed(941342)
+        for i in range(1000):
+            r = random_int(-1, -1)
+            assert r == -1
 
     def test_sleep(self):
         cdef timespec tim, tim2;

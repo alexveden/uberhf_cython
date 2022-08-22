@@ -116,7 +116,7 @@ cdef class Transport:
         if result != 0:
             raise ZMQError()
 
-    cdef int get_last_error(self):
+    cdef int get_last_error(self) nogil:
         """
         Get last error code of transport (if specific) or ZMQ 
         :return: 
@@ -126,7 +126,7 @@ cdef class Transport:
 
         return zmq_errno()
 
-    cdef char* get_last_error_str(self, int errnum):
+    cdef const char* get_last_error_str(self, int errnum) nogil:
         """
         Get last error string of transport (if specific) or ZMQ 
         :return: 
