@@ -1,16 +1,23 @@
 # distutils: sources = uberhf/includes/hashmapsrc.c
-
+from libc.string cimport memcpy, strlen, strcmp
 from uberhf.includes.asserts cimport cyassert
 
-cdef class HashMapBase:
+cdef class HashMap:
+    """
+    Default hashmap algorithm works with strings or structures which have 1st member as a char*
+
+    Override __cinit__, item_compare, item_hash for customization!
+    """
+    def __cinit__(self, item_size, min_capacity=16):
+        self._new(item_size, HashMap.item_hash, HashMap.item_compare, min_capacity)
 
     @staticmethod
     cdef int item_compare(const void *a, const void *b, void *udata) nogil:
-        cyassert(0) # Override ME!
+        return strcmp(<char*>a, <char*>b)
 
     @staticmethod
     cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
-        cyassert(0)  # Override ME!
+        return HashMap.hash_func(<char*>item, strlen(<char*>item), seed0, seed1)
 
     @staticmethod
     cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil:

@@ -52,7 +52,7 @@ cdef extern from "hashmapsrc.h"  nogil:
     bint hashmap_iter(hashmap *map, size_t *i, void **item)
 
 
-cdef class HashMapBase:
+cdef class HashMap:
     cdef hashmap* _hash_map
 
     @staticmethod
