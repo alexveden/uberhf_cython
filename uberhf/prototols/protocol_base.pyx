@@ -9,6 +9,7 @@ from uberhf.prototols.libzmq cimport *
 
 DEF MSGT_CONNECT = b'C'
 DEF MSGT_ACTIVATE = b'A'
+DEF MSGT_DISCONNECT = b'D'
 DEF MSGT_HEARTBEAT = b'H'
 
 cdef class ProtocolBase:
@@ -92,7 +93,28 @@ cdef class ProtocolBase:
 
         return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
 
+    cdef int send_disconnect(self):
 
+        cyassert(self.is_server == 0)  # Only client can connect to the server!
+
+        cdef ConnectionState * cstate = self.get_state(b'')
+        #cybreakpoint(1)
+        cdef ProtocolStatus next_state = self._state_transition(cstate.status, ProtocolStatus.UHF_INACTIVE)
+        cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
+        cstate.msg_sent += 1
+        cstate.server_life_id = 0
+        cstate.status = ProtocolStatus.UHF_INACTIVE
+
+        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, MSGT_DISCONNECT, next_state)
+
+
+        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+
+    #
+    #
+    # EVENT HANDLERS
+    #
+    #
     cdef int on_connect(self, ProtocolBaseMessage * msg) nogil:
         """
         Client / server `connect` event handler
@@ -141,7 +163,7 @@ cdef class ProtocolBase:
 
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil:
         """
-        Client / server `connect` event handler
+        Client / server `activate` event handler
         :param msg: 
         :return: 
         """
@@ -186,13 +208,63 @@ cdef class ProtocolBase:
             else:
                 return PROTOCOL_ERR_LIFE_ID
 
+    cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil:
+        """
+        Client / server `disconnect` event handler
+        :param msg: 
+        :return: 
+        """
+        cyassert(self.is_server == 1) # Only servers must receive this command!
+
+        cdef ConnectionState * cstate
+        cdef ProtocolBaseMessage *msg_out
+
+        if self.is_server:
+            cstate = self.get_state(msg.header.sender_id)
+        else:
+            cstate = self.get_state(b'')
+
+        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
+        cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
+
+        if next_state == ProtocolStatus.UHF_INACTIVE:
+            cstate.last_heartbeat_time_ns = datetime_nsnow()
+            cstate.status = next_state
+
+            if self.is_server:
+                cstate.msg_recvd += 1
+                cstate.client_life_id = 0
+                return 1
+            else:
+                # Only servers allowed to use this event handler
+                return PROTOCOL_ERR_WRONG_ORDER
+        else:
+            return PROTOCOL_ERR_WRONG_ORDER
+
     cdef bint _check_life_id(self, ConnectionState *cstate, ProtocolBaseMessage *msg) nogil:
+        """
+        Make sure if server and client life id match
+        :param cstate: current state
+        :param msg: incoming message
+        :return: 
+        """
+
         if self.is_server:
             return cstate.client_life_id == msg.header.client_life_id and cstate.server_life_id == self.server_life_id
         else:
             return cstate.client_life_id == self.client_life_id and cstate.server_life_id == msg.header.server_life_id
 
     cdef ProtocolBaseMessage * _make_msg(self, ConnectionState *cstate, char msg_type, ProtocolStatus msg_status) nogil:
+        """
+        Creates a ProtocolBaseMessage for sending
+        
+        IMPORTANT:  Make sure that self.transport.send(...., no_copy=True), to avoid memory leaks
+        
+        :param cstate: 
+        :param msg_type: 
+        :param msg_status: 
+        :return: 
+        """
         cdef ProtocolBaseMessage *msg_out = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
         msg_out.header.protocol_id = PROTOCOL_ID_BASE
         msg_out.header.msg_type = msg_type
@@ -201,7 +273,14 @@ cdef class ProtocolBase:
         msg_out.status = msg_status
         return msg_out
 
-    cdef ProtocolStatus _state_transition(self, ProtocolStatus conn_status, ProtocolStatus new_status) nogil except ProtocolStatus.UHF_INACTIVE:
+    cdef ProtocolStatus _state_transition(self, ProtocolStatus conn_status, ProtocolStatus new_status) nogil:
+        """
+        Checking possible state transitions
+        
+        :param conn_status: 
+        :param new_status: 
+        :return:  next required connection state status 
+        """
         if conn_status == ProtocolStatus.UHF_INACTIVE:
             if new_status == ProtocolStatus.UHF_CONNECTING:
                 return ProtocolStatus.UHF_CONNECTING
@@ -232,8 +311,9 @@ cdef class ProtocolBase:
                 return ProtocolStatus.UHF_ACTIVE
             else:
                 return ProtocolStatus.UHF_INACTIVE
-        else:
-            cyassert(0) # Not implemented!
+
+        cyassert(0) # conn_status - Not implemented!
+        return ProtocolStatus.UHF_INACTIVE
 
 
 

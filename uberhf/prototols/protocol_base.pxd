@@ -28,13 +28,22 @@ cdef class ProtocolBase:
 
     cdef void initialize(self, bint is_server, int module_id, Transport transport)
     cdef ConnectionState * get_state(self, char * sender_id) nogil
+
+    #
+    # Client / server commands + event handlers
+    #
     cdef int send_connect(self) nogil
     cdef int on_connect(self, ProtocolBaseMessage * msg) nogil
 
     cdef int send_activate(self) nogil
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil
 
+    cdef int send_disconnect(self)
+    cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil
 
+    #
+    # Private methods
+    #
     cdef ProtocolBaseMessage * _make_msg(self, ConnectionState *cstate, char msg_type, ProtocolStatus msg_status) nogil
     cdef bint _check_life_id(self, ConnectionState *cstate, ProtocolBaseMessage *msg) nogil
-    cdef ProtocolStatus _state_transition(sellf, ProtocolStatus conn_status, ProtocolStatus new_status) nogil except ProtocolStatus.UHF_INACTIVE
+    cdef ProtocolStatus _state_transition(sellf, ProtocolStatus conn_status, ProtocolStatus new_status) nogil

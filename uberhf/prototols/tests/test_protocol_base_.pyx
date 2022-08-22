@@ -252,3 +252,190 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 if transport_c:
                     transport_c.close()
                 free(msg)
+
+
+    def test_protocol_disconnect_sequence_from_active(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                #
+                # Initial connection request
+                #
+                assert pc.send_connect() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_connect(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_connect(msg) > 0
+                assert pc.send_activate() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_activate(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_activate(msg) > 0
+
+                cstate = pc.get_state(b'')
+                assert cstate != NULL
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                assert cstate.msg_errs == 0
+                assert cstate.msg_sent == 2
+                assert cstate.msg_recvd == 2
+
+                assert pc.send_disconnect() > 0
+                cstate = pc.get_state(b'')
+                assert cstate != NULL
+                assert cstate.server_life_id == 0
+                assert cstate.client_life_id == pc.client_life_id
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE
+                assert cstate.msg_errs == 0
+                assert cstate.msg_sent == 3
+                assert cstate.msg_recvd == 2
+
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_disconnect(msg) > 0
+                sstate = ps.get_state(b'CLI')
+                assert sstate != NULL
+                assert sstate.client_life_id == 0
+                assert sstate.server_life_id == ps.server_life_id
+                assert sstate.msg_sent == 2
+                assert sstate.msg_recvd == 3
+                assert sstate.msg_errs == 0
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+    def test_protocol_disconnect_sequence_from_connecting(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                #
+                # Initial connection request
+                #
+                assert pc.send_connect() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_connect(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_connect(msg) > 0
+
+                cstate = pc.get_state(b'')
+                assert cstate != NULL
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert cstate.status == ProtocolStatus.UHF_CONNECTING
+
+                assert pc.send_disconnect() > 0
+                cstate = pc.get_state(b'')
+                assert cstate != NULL
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE
+
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_disconnect(msg) > 0
+                sstate = ps.get_state(b'CLI')
+                assert sstate != NULL
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+    def test_protocol_status_transition(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                assert ps._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_CONNECTING
+                assert pc._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_CONNECTING
+                assert ps._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+
+
+                assert ps._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INITIALIZING
+                assert pc._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INITIALIZING
+                assert ps._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_CONNECTING, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+
+                assert ps._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INITIALIZING
+                assert pc._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INITIALIZING
+                assert ps._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_INITIALIZING, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+
+
+                assert ps._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_INITIALIZING) == ProtocolStatus.UHF_INACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_ACTIVE) == ProtocolStatus.UHF_ACTIVE
+                assert ps._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+                assert pc._state_transition(ProtocolStatus.UHF_ACTIVE, ProtocolStatus.UHF_INACTIVE) == ProtocolStatus.UHF_INACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
