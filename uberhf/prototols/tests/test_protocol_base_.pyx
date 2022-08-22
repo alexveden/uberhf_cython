@@ -125,7 +125,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 #
                 # Initial connection request
                 #
-                assert pc.connect() > 0
+                assert pc.send_connect() > 0
                 # Client state after connection request
                 cstate = pc.get_state(b'')
                 assert cstate.server_life_id == 0
@@ -133,7 +133,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.msg_sent == 1
                 assert cstate.msg_recvd == 0
                 assert cstate.msg_errs == 0
-                assert cstate.status == ProtocolStatus.UHF_CONNECTING
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE
 
                 #
                 # SERVER RECEIVES CONNECTION REQUEST FROM CLIENT
@@ -181,6 +181,68 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.msg_errs == 0
                 assert cstate.msg_sent == 1
                 assert cstate.msg_recvd == 1
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+    def test_protocol_activate_sequence(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                #
+                # Initial connection request
+                #
+                assert pc.send_connect() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_connect(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_connect(msg) > 0
+                #
+                # Activating client
+                #
+                assert pc.send_activate() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_activate(msg) > 0
+
+                sstate = ps.get_state(b'CLI')
+                assert sstate != NULL
+                assert sstate.client_life_id == pc.client_life_id
+                assert sstate.server_life_id == ps.server_life_id
+                assert sstate.msg_sent == 2
+                assert sstate.msg_recvd == 2
+                assert sstate.msg_errs == 0
+                assert sstate.status == ProtocolStatus.UHF_ACTIVE
+
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_activate(msg) > 0
+
+                cstate = pc.get_state(b'')
+                assert cstate != NULL
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                assert cstate.msg_errs == 0
+                assert cstate.msg_sent == 2
+                assert cstate.msg_recvd == 2
 
             except:
                 raise
