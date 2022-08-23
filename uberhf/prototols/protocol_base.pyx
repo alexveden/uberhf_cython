@@ -14,9 +14,17 @@ DEF MSGT_HEARTBEAT = b'H'
 
 cdef class ProtocolBase:
     def __cinit__(self, is_server, module_id, transport):
-        self.initialize(is_server, module_id, transport)
+        self.protocol_initialize(is_server, module_id, transport)
 
-    cdef void initialize(self, bint is_server, int module_id, Transport transport):
+    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport):
+        """
+        Basic constructor method to make sure the class inheritance work
+        
+        :param is_server: 1 - protocol instance is a server, 0 - is client
+        :param module_id: unique module id between (0;40)        
+        :param transport: Transport instance, must be ZMQ_ROUTER for server, ZMQ_DEALER for client!
+        :return: 
+        """
         assert module_id >0 and module_id < 40, 'Module ID must be >0 and < 40'
 
         self.is_server = is_server
@@ -33,12 +41,17 @@ cdef class ProtocolBase:
         self.connections = HashMap(sizeof(ConnectionState))
 
     cdef ConnectionState * get_state(self, char * sender_id) nogil:
+        """
+        Get client/server connection state, or creates new instance if not found        
+        
+        :param sender_id: when called as client `sender_id` must be (b""), for server as msg.header.sender_id        
+        :return: connection state pointer
+        """
         cyassert (sender_id != NULL)
         if self.is_server:
             cyassert(strlen(sender_id) > 0)
         else:
             cyassert(strlen(sender_id) == 0)
-
 
         cdef ConnectionState* cstate = <ConnectionState*> self.connections.get(sender_id)
         if cstate == NULL:
@@ -64,7 +77,7 @@ cdef class ProtocolBase:
         return cstate
 
     #
-    #  Base protocol commandd
+    #  Base protocol commands
     #
     cdef int send_connect(self) nogil:
         """
