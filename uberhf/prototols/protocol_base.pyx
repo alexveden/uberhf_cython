@@ -1,11 +1,11 @@
 from uberhf.includes.uhfprotocols cimport ProtocolStatus, TRANSPORT_SENDER_SIZE, PROTOCOL_ID_BASE, PROTOCOL_ERR_WRONG_ORDER, \
-                                          PROTOCOL_ERR_LIFE_ID, PROTOCOL_ERR_WRONG_TYPE
+                                          PROTOCOL_ERR_LIFE_ID, PROTOCOL_ERR_WRONG_TYPE, PROTOCOL_ERR_CLI_TIMEO, PROTOCOL_ERR_SRV_TIMEO
 from .transport cimport Transport, TransportHeader
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from libc.stdlib cimport malloc, free
 from libc.string cimport strlen
 from uberhf.includes.hashmap cimport HashMap
-from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id
+from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id, timedelta_ns, TIMEDELTA_SEC
 from uberhf.prototols.libzmq cimport *
 
 DEF MSGT_CONNECT = b'C'
@@ -14,19 +14,21 @@ DEF MSGT_DISCONNECT = b'D'
 DEF MSGT_HEARTBEAT = b'H'
 
 cdef class ProtocolBase:
-    def __cinit__(self, is_server, module_id, transport):
-        self.protocol_initialize(is_server, module_id, transport)
+    def __cinit__(self, is_server, module_id, transport, heartbeat_interval_sec=5):
+        self.protocol_initialize(is_server, module_id, transport, heartbeat_interval_sec)
 
-    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport):
+    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport, double heartbeat_interval_sec):
         """
         Basic constructor method to make sure the class inheritance work
         
         :param is_server: 1 - protocol instance is a server, 0 - is client
         :param module_id: unique module id between (0;40)        
         :param transport: Transport instance, must be ZMQ_ROUTER for server, ZMQ_DEALER for client!
+        :param heartbeat_interval_sec: heartbeat interval, in seconds (fractional allowed too!)
         :return: 
         """
         assert module_id >0 and module_id < 40, 'Module ID must be >0 and < 40'
+        assert heartbeat_interval_sec > 0 and heartbeat_interval_sec < 300, 'heartbeat_interval_sec expected between (0, 300) seconds'
 
         self.is_server = is_server
         if is_server:
@@ -40,6 +42,7 @@ cdef class ProtocolBase:
 
         self.transport = transport
         self.connections = HashMap(sizeof(ConnectionState))
+        self.heartbeat_interval_sec = heartbeat_interval_sec
 
     cdef ConnectionState * get_state(self, char * sender_id) nogil:
         """
@@ -90,6 +93,9 @@ cdef class ProtocolBase:
 
         cdef ConnectionState * cstate = self.get_state(b'')
         cyassert(cstate.status == ProtocolStatus.UHF_INACTIVE)
+
+        # Set this to avoid perpetual connection trials at heartbeat()
+        cstate.last_msg_time_ns = datetime_nsnow()
         return self._send_command(cstate, ProtocolStatus.UHF_CONNECTING, MSGT_CONNECT)
 
     cdef int send_activate(self) nogil:
@@ -99,6 +105,7 @@ cdef class ProtocolBase:
         :return: 
         """
         cyassert(self.is_server == 0)  # Only client can connect to the server!
+
         cdef ConnectionState * cstate = self.get_state(b'')
         return self._send_command(cstate, ProtocolStatus.UHF_ACTIVE, MSGT_ACTIVATE)
 
@@ -110,8 +117,7 @@ cdef class ProtocolBase:
         """
         cyassert(self.is_server == 0)  # Only client can connect to the server!
         cdef ConnectionState * cstate = self.get_state(b'')
-        cstate.server_life_id = 0
-        cstate.status = ProtocolStatus.UHF_INACTIVE
+        self.disconnect_client(cstate)
         return self._send_command(cstate, ProtocolStatus.UHF_INACTIVE, MSGT_DISCONNECT)
 
     cdef int send_heartbeat(self) nogil:
@@ -138,14 +144,17 @@ cdef class ProtocolBase:
         """
         #cybreakpoint(1)
         cdef ConnectionState * cstate
-
+        cdef int rc = 0
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
+            return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_CONNECTING, 0, MSGT_CONNECT)
         else:
             cstate = self.get_state(b'')
-
-        return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_CONNECTING, 0, MSGT_CONNECT)
-
+            rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_CONNECTING, 0, MSGT_CONNECT)
+            if rc > 0:
+                return self.initialize_client(cstate)
+            else:
+                return rc
 
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil:
         """
@@ -177,8 +186,9 @@ cdef class ProtocolBase:
 
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
+            self.disconnect_client(cstate)
         else:
-            cstate = self.get_state(b'')
+            return PROTOCOL_ERR_WRONG_ORDER
 
         return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_INACTIVE, 0, 0)
 
@@ -190,6 +200,7 @@ cdef class ProtocolBase:
         :param msg: 
         :return: 
         """
+        cdef ConnectionState * cstate
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
         else:
@@ -199,6 +210,104 @@ cdef class ProtocolBase:
         if rc > 0:
             cstate.n_heartbeats += 1
         return rc
+
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
+        """
+        Generic protocol message processor,
+
+        supports only ProtocolBaseMessage with PROTOCOL_ID_BASE
+
+        :param msg: generic message 
+        :param msg_size: msg size
+        :return: 0 if protocol didn't match, or return code of the message handler (>0 ok, < 0 error) 
+        """
+        cdef ProtocolBaseMessage * proto_msg = <ProtocolBaseMessage *> msg
+
+        if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != PROTOCOL_ID_BASE:
+            # Protocol doesn't match
+            return 0
+
+        if proto_msg.header.msg_type == MSGT_HEARTBEAT:
+            return self.on_heartbeat(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_CONNECT:
+            return self.on_connect(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_ACTIVATE:
+            return self.on_activate(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_DISCONNECT:
+            return self.on_disconnect(proto_msg)
+        else:
+            return PROTOCOL_ERR_WRONG_TYPE
+
+    cdef int initialize_client(self, ConnectionState * cstate) nogil:
+        """
+        Initializes connection sequence immediately after connection was confirmed by the server
+        
+        Only for clients!  Can be overridden by child class to maintain custom initialization 
+        
+        :param cstate: 
+        :return: 
+        """
+        return self.send_activate()
+
+    cdef void disconnect_client(self, ConnectionState * cstate) nogil:
+        """
+        Set internal connection state as disconnected, this method should also be overridden by child classes for additional logic
+        
+        :param cstate: 
+        :return: 
+        """
+        cstate.status = ProtocolStatus.UHF_INACTIVE
+        if self.is_server:
+            cstate.client_life_id = 0
+        else:
+            cstate.server_life_id = 0
+
+    cdef int heartbeat(self, long dtnow) nogil:
+        """
+        This method intended for call in ZMQ poller loops of the main application, it has to be called with some timeout interval 
+        (say 100-200 millisec), to avoid CPU overload        
+        :param dtnow: current time, datetime_nsnow()
+        :return: 0 if 
+        """
+        cdef size_t i = 0
+        cdef void * hm_data = NULL
+        cdef ConnectionState * cstate = NULL
+        cdef int rc = 0
+        cdef double t_delta
+
+        if self.is_server:
+
+            # Check if clients are connected
+            while self.connections.iter(&i, &hm_data):
+                cstate = <ConnectionState *> hm_data
+                t_delta = timedelta_ns(dtnow, cstate.last_msg_time_ns, TIMEDELTA_SEC)
+                if cstate.status != ProtocolStatus.UHF_INACTIVE:
+                    if t_delta >= self.heartbeat_interval_sec * 3:
+                        # Client failed to send any messages of heartbeats
+                        self.disconnect_client(cstate)
+                        rc = PROTOCOL_ERR_CLI_TIMEO
+            return rc
+        else:
+            #
+            # Client!
+            #
+            cstate = self.get_state(b'')
+            t_delta = timedelta_ns(dtnow, cstate.last_msg_time_ns, TIMEDELTA_SEC)
+
+            if cstate.status == ProtocolStatus.UHF_INACTIVE:
+                if t_delta >= self.heartbeat_interval_sec * 3:
+                    return self.send_connect()
+                else:
+                    return 0
+            else:
+                if t_delta >= self.heartbeat_interval_sec * 3:
+                    # Probably something went wrong, disconnecting, to be able to connect later
+                    self.send_disconnect()
+                    return PROTOCOL_ERR_SRV_TIMEO
+                elif t_delta >= self.heartbeat_interval_sec:
+                    return self.send_heartbeat()
+                else:
+                    return 0
 
     #
     # Private methods
@@ -371,21 +480,4 @@ cdef class ProtocolBase:
         cyassert(0) # conn_status - Not implemented!
         return ProtocolStatus.UHF_INACTIVE
 
-    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
-        cdef ProtocolBaseMessage * proto_msg = <ProtocolBaseMessage *> msg
-
-        if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != PROTOCOL_ID_BASE:
-            # Protocol doesn't match
-            return 0
-
-        if proto_msg.header.msg_type == MSGT_HEARTBEAT:
-            return self.on_heartbeat(proto_msg)
-        elif proto_msg.header.msg_type == MSGT_CONNECT:
-            return self.on_connect(proto_msg)
-        elif proto_msg.header.msg_type == MSGT_ACTIVATE:
-            return self.on_activate(proto_msg)
-        elif proto_msg.header.msg_type == MSGT_DISCONNECT:
-            return self.on_disconnect(proto_msg)
-        else:
-            return PROTOCOL_ERR_WRONG_TYPE
 

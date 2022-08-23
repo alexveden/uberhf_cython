@@ -26,8 +26,9 @@ cdef class ProtocolBase:
     cdef HashMap connections
     cdef unsigned int server_life_id
     cdef unsigned int client_life_id
+    cdef double heartbeat_interval_sec
 
-    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport)
+    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport, double heartbeat_interval_sec)
     cdef ConnectionState * get_state(self, char * sender_id) nogil
 
     #
@@ -46,6 +47,10 @@ cdef class ProtocolBase:
     cdef int on_heartbeat(self, ProtocolBaseMessage * msg) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil
+    cdef int heartbeat(self, long dtnow) nogil
+
+    cdef void disconnect_client(self, ConnectionState * cstate) nogil
+    cdef int initialize_client(self, ConnectionState * cstate) nogil
 
     #
     # Private methods

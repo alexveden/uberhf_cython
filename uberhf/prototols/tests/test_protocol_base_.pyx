@@ -9,6 +9,7 @@ from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
+from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
 
 from unittest.mock import MagicMock
 URL_BIND = b'tcp://*:7100'
@@ -177,8 +178,21 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.client_life_id == pc.client_life_id
                 assert cstate.status == ProtocolStatus.UHF_CONNECTING
                 assert cstate.msg_errs == 0
-                assert cstate.msg_sent == 1
+                assert cstate.msg_sent == 2
                 assert cstate.msg_recvd == 1
+
+                # Client sends immediately activate command!
+
+                assert transport_receive(transport_s, &msg)
+
+                # Check the incoming message validity
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert msg.header.protocol_id == PROTOCOL_ID_BASE
+                assert msg.header.sender_id == b'CLI'
+                assert msg.header.msg_type == b'A'
+                assert msg.header.magic_number == TRANSPORT_HDR_MGC
+                assert msg.status == ProtocolStatus.UHF_ACTIVE
 
             except:
                 raise
@@ -217,7 +231,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 #
                 # Activating client
                 #
-                assert pc.send_activate() > 0
+                # This will be sent automatically pc.on_connect()
+                #assert pc.send_activate() > 0
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_activate(msg) > 0
 
@@ -277,7 +292,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert ps.on_connect(msg) > 0
                 assert transport_receive(transport_c, &msg)
                 assert pc.on_connect(msg) > 0
-                assert pc.send_activate() > 0
+                #assert pc.send_activate() > 0
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_activate(msg) > 0
                 assert transport_receive(transport_c, &msg)
@@ -502,7 +517,6 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 free(msg)
 
 
-
     def test_protocol_message_processing(self):
         cdef ConnectionState *cstate;
         cdef ConnectionState *sstate;
@@ -531,7 +545,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 #
                 # Activating client
                 #
-                assert pc.send_activate() > 0
+                #assert pc.send_activate() > 0
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
                 assert transport_receive(transport_c, &msg)
@@ -578,5 +592,252 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                     transport_c.close()
                 free(msg)
 
+    def test_protocol_connection_via_heartbeat(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
 
 
+                assert pc.heartbeat(datetime_nsnow()) >= 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+
+
+                cstate = pc.get_state(b'')
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                sstate = ps.get_state(b'CLI')
+                assert sstate.status == ProtocolStatus.UHF_ACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+
+    def test_protocol_connection_via_poller(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+        cdef long dt_prev_call
+        cdef long dt_now
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
+                c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                poller = zmq.Poller()
+                poller.register(s_socket, zmq.POLLIN)
+                poller.register(c_socket, zmq.POLLIN)
+
+                dt_prev_call = datetime_nsnow()
+                for i in range(10):
+                    socks = dict(poller.poll(50))
+                    if s_socket in socks and socks[s_socket] == zmq.POLLIN:
+                        transport_data = transport_s.receive(&msg_size)
+                        assert ps.on_process_new_message(transport_data, msg_size) > 0
+                        transport_s.receive_finalize(transport_data)
+                    if c_socket in socks and socks[c_socket] == zmq.POLLIN:
+                        transport_data = transport_c.receive(&msg_size)
+                        assert pc.on_process_new_message(transport_data, msg_size) > 0
+                        transport_c.receive_finalize(transport_data)
+
+                    dt_now = datetime_nsnow()
+                    if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+                        assert ps.heartbeat(dt_now) >= 0
+                        assert pc.heartbeat(dt_now) >= 0
+
+                        dt_prev_call = dt_now
+
+                cstate = pc.get_state(b'')
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                sstate = ps.get_state(b'CLI')
+                assert sstate.status == ProtocolStatus.UHF_ACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+    def test_protocol_connection_via_poller__no_server(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+        cdef long dt_prev_call
+        cdef long dt_now
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                pc = ProtocolBase(False, 22, transport_c, heartbeat_interval_sec=0.05)
+
+                c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                poller = zmq.Poller()
+                poller.register(c_socket, zmq.POLLIN)
+
+                dt_prev_call = datetime_nsnow()
+                cstate = pc.get_state(b'')
+                assert cstate.last_msg_time_ns == 0
+
+                for i in range(10):
+                    socks = dict(poller.poll(50))
+                    if c_socket in socks and socks[c_socket] == zmq.POLLIN:
+                        transport_data = transport_c.receive(&msg_size)
+                        assert pc.on_process_new_message(transport_data, msg_size) > 0
+                        transport_c.receive_finalize(transport_data)
+
+                    dt_now = datetime_nsnow()
+                    if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+                        hb = pc.heartbeat(dt_now)
+
+                        if i == 0:
+                            # Trying to connect
+                            assert hb > 0
+                            assert cstate.msg_sent == 1
+                            assert cstate.last_msg_time_ns > 0
+                            assert cstate.status == ProtocolStatus.UHF_INACTIVE
+
+                        elif i == 1:
+                            # Timeout should work!
+                            assert cstate.msg_sent == 1
+                            assert hb == 0
+
+                        dt_prev_call = dt_now
+
+                self.assertEqual(cstate.msg_sent, 4)
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE
+
+            except:
+                raise
+            finally:
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+    def test_protocol_connection_via_poller_timeout(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+        cdef long dt_prev_call
+        cdef long dt_now
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s, heartbeat_interval_sec=0.05)
+                pc = ProtocolBase(False, 22, transport_c, heartbeat_interval_sec=0.05)
+
+                s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
+                c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                poller = zmq.Poller()
+                poller.register(s_socket, zmq.POLLIN)
+                poller.register(c_socket, zmq.POLLIN)
+
+                dt_prev_call = datetime_nsnow()
+                for i in range(10):
+                    socks = dict(poller.poll(50))
+                    if s_socket in socks and socks[s_socket] == zmq.POLLIN:
+                        transport_data = transport_s.receive(&msg_size)
+                        assert ps.on_process_new_message(transport_data, msg_size) > 0
+                        transport_s.receive_finalize(transport_data)
+                    if c_socket in socks and socks[c_socket] == zmq.POLLIN:
+                        transport_data = transport_c.receive(&msg_size)
+                        assert pc.on_process_new_message(transport_data, msg_size) > 0
+                        transport_c.receive_finalize(transport_data)
+
+                    dt_now = datetime_nsnow()
+                    if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+                        assert ps.heartbeat(dt_now) >= 0
+                        assert pc.heartbeat(dt_now) >= 0
+
+                        dt_prev_call = dt_now
+
+                cstate = pc.get_state(b'')
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                sstate = ps.get_state(b'CLI')
+                assert sstate.status == ProtocolStatus.UHF_ACTIVE
+
+                for i in range(10):
+                    socks = dict(poller.poll(50))
+                    if s_socket in socks and socks[s_socket] == zmq.POLLIN:
+                        transport_data = transport_s.receive(&msg_size)
+                        # Send malformed message size to make timeouts
+                        assert ps.on_process_new_message(transport_data, msg_size - 1) == 0
+                        transport_s.receive_finalize(transport_data)
+                    if c_socket in socks and socks[c_socket] == zmq.POLLIN:
+                        transport_data = transport_c.receive(&msg_size)
+                        # Send malformed message size to make timeouts
+                        assert pc.on_process_new_message(transport_data, msg_size - 1) == 0
+                        transport_c.receive_finalize(transport_data)
+
+                    dt_now = datetime_nsnow()
+                    if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+                        hbs = ps.heartbeat(dt_now)
+                        hbc = pc.heartbeat(dt_now)
+                        if hbc < 0:
+                            assert hbc == PROTOCOL_ERR_SRV_TIMEO, hbc
+                        if hbs < 0:
+                            assert  hbs == PROTOCOL_ERR_CLI_TIMEO, hbs
+                        dt_prev_call = dt_now
+
+                cstate = pc.get_state(b'')
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE
+                assert cstate.server_life_id == 0
+                sstate = ps.get_state(b'CLI')
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE
+                assert sstate.client_life_id == 0
+
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
