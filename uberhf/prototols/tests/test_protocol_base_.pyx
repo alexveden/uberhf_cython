@@ -7,6 +7,7 @@ from libc.stdint cimport uint64_t
 from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
+from uberhf.includes.asserts cimport cyassert
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 
 from unittest.mock import MagicMock
@@ -16,12 +17,9 @@ URL_CONNECT = b'tcp://localhost:7100'
 cdef inline bint transport_receive(Transport transport, ProtocolBaseMessage **msg) nogil:
     cdef size_t msg_size = 0
     cdef void* transport_data = transport.receive(&msg_size)
-    if transport_data == NULL:
-        return 0
 
-    if msg_size != sizeof(ProtocolBaseMessage):
-        transport.receive_finalize(transport_data)
-        return 0
+    cyassert(transport_data != NULL)
+    cyassert(msg_size == sizeof(ProtocolBaseMessage))
 
     memcpy(msg[0], transport_data, msg_size)
     transport.receive_finalize(transport_data)
@@ -502,4 +500,83 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 if transport_c:
                     transport_c.close()
                 free(msg)
+
+
+
+    def test_protocol_message_processing(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                ps = ProtocolBase(True, 11, transport_s)
+                pc = ProtocolBase(False, 22, transport_c)
+
+                #
+                # Initial connection request
+                #
+                assert pc.send_connect() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                #
+                # Activating client
+                #
+                assert pc.send_activate() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+
+                cstate = pc.get_state(b'')
+                assert cstate.status == ProtocolStatus.UHF_ACTIVE
+                #
+                # Sending heartbeat
+                #
+                assert pc.send_heartbeat() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+
+                sstate = ps.get_state(b'CLI')
+                assert sstate.n_heartbeats == 1
+
+
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                cstate = pc.get_state(b'')
+                assert cstate.n_heartbeats == 1
+
+                assert pc.send_disconnect() > 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+
+                # Size mismatch
+                assert ps.on_process_new_message(b'', 0) == 0
+
+                # Protocol ID match but incorrect message type
+                msg.header.msg_type = b'T'
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) == PROTOCOL_ERR_WRONG_TYPE
+
+                # Protocol ID mismatch must message mismatch
+                msg.header.protocol_id = b'T'
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) == 0
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                free(msg)
+
+
 

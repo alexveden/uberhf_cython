@@ -1,4 +1,5 @@
-from uberhf.includes.uhfprotocols cimport ProtocolStatus, TRANSPORT_SENDER_SIZE, PROTOCOL_ID_BASE, PROTOCOL_ERR_WRONG_ORDER, PROTOCOL_ERR_LIFE_ID
+from uberhf.includes.uhfprotocols cimport ProtocolStatus, TRANSPORT_SENDER_SIZE, PROTOCOL_ID_BASE, PROTOCOL_ERR_WRONG_ORDER, \
+                                          PROTOCOL_ERR_LIFE_ID, PROTOCOL_ERR_WRONG_TYPE
 from .transport cimport Transport, TransportHeader
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from libc.stdlib cimport malloc, free
@@ -370,6 +371,21 @@ cdef class ProtocolBase:
         cyassert(0) # conn_status - Not implemented!
         return ProtocolStatus.UHF_INACTIVE
 
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
+        cdef ProtocolBaseMessage * proto_msg = <ProtocolBaseMessage *> msg
 
+        if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != PROTOCOL_ID_BASE:
+            # Protocol doesn't match
+            return 0
 
+        if proto_msg.header.msg_type == MSGT_HEARTBEAT:
+            return self.on_heartbeat(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_CONNECT:
+            return self.on_connect(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_ACTIVATE:
+            return self.on_activate(proto_msg)
+        elif proto_msg.header.msg_type == MSGT_DISCONNECT:
+            return self.on_disconnect(proto_msg)
+        else:
+            return PROTOCOL_ERR_WRONG_TYPE
 

@@ -44,6 +44,9 @@ cdef class ProtocolBase:
 
     cdef int send_heartbeat(self) nogil
     cdef int on_heartbeat(self, ProtocolBaseMessage * msg) nogil
+
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil
+
     #
     # Private methods
     #
@@ -57,4 +60,4 @@ cdef class ProtocolBase:
                            ) nogil
     cdef ProtocolBaseMessage * _make_msg(self, ConnectionState *cstate, char msg_type, ProtocolStatus msg_status) nogil
     cdef bint _check_life_id(self, ConnectionState *cstate, ProtocolBaseMessage *msg) nogil
-    cdef ProtocolStatus _state_transition(sellf, ProtocolStatus conn_status, ProtocolStatus new_status) nogil
+    cdef ProtocolStatus _state_transition(self, ProtocolStatus conn_status, ProtocolStatus new_status) nogil
