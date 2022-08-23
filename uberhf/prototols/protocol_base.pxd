@@ -27,7 +27,7 @@ cdef class ProtocolBase:
     cdef unsigned int server_life_id
     cdef unsigned int client_life_id
 
-    cdef void initialize(self, bint is_server, int module_id, Transport transport)
+    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport)
     cdef ConnectionState * get_state(self, char * sender_id) nogil
 
     #
