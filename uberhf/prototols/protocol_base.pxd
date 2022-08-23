@@ -8,10 +8,11 @@ ctypedef struct ConnectionState:
     unsigned int server_life_id
     unsigned int client_life_id
     ProtocolStatus status
-    long last_heartbeat_time_ns
+    long last_msg_time_ns
     size_t msg_sent
     size_t msg_recvd
     size_t msg_errs
+    size_t n_heartbeats
 
 
 ctypedef struct ProtocolBaseMessage:
@@ -38,9 +39,11 @@ cdef class ProtocolBase:
     cdef int send_activate(self) nogil
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil
 
-    cdef int send_disconnect(self)
+    cdef int send_disconnect(self) nogil
     cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil
 
+    cdef int send_heartbeat(self) nogil
+    cdef int on_heartbeat(self, ProtocolBaseMessage * msg) nogil
     #
     # Private methods
     #
