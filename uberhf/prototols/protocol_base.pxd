@@ -47,6 +47,14 @@ cdef class ProtocolBase:
     #
     # Private methods
     #
+    cdef int _send_command(self, ConnectionState *cstate, ProtocolStatus new_status, char msg_type) nogil
+    cdef int _on_msg_reply(self,
+                           ConnectionState * cstate,
+                           ProtocolBaseMessage *msg,
+                           ProtocolStatus expected_status,
+                           bint check_life_id,
+                           char server_reply_msg_type,
+                           ) nogil
     cdef ProtocolBaseMessage * _make_msg(self, ConnectionState *cstate, char msg_type, ProtocolStatus msg_status) nogil
     cdef bint _check_life_id(self, ConnectionState *cstate, ProtocolBaseMessage *msg) nogil
     cdef ProtocolStatus _state_transition(sellf, ProtocolStatus conn_status, ProtocolStatus new_status) nogil

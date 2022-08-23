@@ -63,69 +63,52 @@ cdef class ProtocolBase:
 
         return cstate
 
+    #
+    #  Base protocol commandd
+    #
     cdef int send_connect(self) nogil:
+        """
+        Client connection to the server
+        
+        :return: 
+        """
         cyassert(self.is_server == 0) # Only client can connect to the server!
 
         cdef ConnectionState * cstate = self.get_state(b'')
         cyassert(cstate.status == ProtocolStatus.UHF_INACTIVE)
-
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, ProtocolStatus.UHF_CONNECTING)
-
-        cyassert(next_state == ProtocolStatus.UHF_CONNECTING)
-        if next_state != ProtocolStatus.UHF_CONNECTING:
-            return PROTOCOL_ERR_WRONG_ORDER
-
-        cstate.msg_sent += 1
-        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, MSGT_CONNECT, next_state)
-        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+        return self._send_command(cstate, ProtocolStatus.UHF_CONNECTING, MSGT_CONNECT)
 
     cdef int send_activate(self) nogil:
+        """
+        Client connection activation
+        
+        :return: 
+        """
         cyassert(self.is_server == 0)  # Only client can connect to the server!
-
         cdef ConnectionState * cstate = self.get_state(b'')
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, ProtocolStatus.UHF_ACTIVE)
-
-        cyassert(next_state == ProtocolStatus.UHF_ACTIVE)
-        if next_state != ProtocolStatus.UHF_ACTIVE:
-            return PROTOCOL_ERR_WRONG_ORDER
-
-        cstate.msg_sent += 1
-        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, MSGT_ACTIVATE, next_state)
-
-        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+        return self._send_command(cstate, ProtocolStatus.UHF_ACTIVE, MSGT_ACTIVATE)
 
     cdef int send_disconnect(self) nogil:
-
+        """
+        Client disconnection
+        
+        :return: 
+        """
         cyassert(self.is_server == 0)  # Only client can connect to the server!
-
         cdef ConnectionState * cstate = self.get_state(b'')
-        #cybreakpoint(1)
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, ProtocolStatus.UHF_INACTIVE)
-        cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
-        cstate.msg_sent += 1
         cstate.server_life_id = 0
         cstate.status = ProtocolStatus.UHF_INACTIVE
-
-        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, MSGT_DISCONNECT, next_state)
-
-
-        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+        return self._send_command(cstate, ProtocolStatus.UHF_INACTIVE, MSGT_DISCONNECT)
 
     cdef int send_heartbeat(self) nogil:
+        """
+        Client heartbeat
+        
+        :return: 
+        """
         cyassert(self.is_server == 0)  # Only client can connect to the server!
-
         cdef ConnectionState * cstate = self.get_state(b'')
-
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, ProtocolStatus.UHF_ACTIVE)
-        cyassert(next_state == ProtocolStatus.UHF_ACTIVE)
-        if cstate.status != ProtocolStatus.UHF_ACTIVE:
-            return PROTOCOL_ERR_WRONG_ORDER
-
-        cstate.msg_sent += 1
-
-        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, MSGT_HEARTBEAT, next_state)
-
-        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+        return self._send_command(cstate, ProtocolStatus.UHF_ACTIVE, MSGT_HEARTBEAT)
 
     #
     #
@@ -135,161 +118,163 @@ cdef class ProtocolBase:
     cdef int on_connect(self, ProtocolBaseMessage * msg) nogil:
         """
         Client / server `connect` event handler
+        
         :param msg: 
         :return: 
         """
         #cybreakpoint(1)
         cdef ConnectionState * cstate
-        cdef ProtocolBaseMessage *msg_out
 
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
         else:
             cstate = self.get_state(b'')
 
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
+        return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_CONNECTING, 0, MSGT_CONNECT)
 
-        if next_state == ProtocolStatus.UHF_CONNECTING:
-            cstate.status = next_state
-            cstate.last_msg_time_ns = datetime_nsnow()
-            cstate.msg_recvd += 1
-
-            if self.is_server:
-                #
-                # Server must send a reply with its life id
-                #
-                cstate.client_life_id = msg.header.client_life_id
-                cstate.msg_sent += 1
-
-                msg_out = self._make_msg(cstate, MSGT_CONNECT, next_state)
-                return self.transport.send(cstate.sender_id, msg_out, sizeof(ProtocolBaseMessage), no_copy=True)
-            else:
-                #
-                # Client doesn't reply but can continue initialization after that
-                #
-                cyassert(cstate.status == ProtocolStatus.UHF_CONNECTING) # Expected get ProtocolStatus.UHF_CONNECTING from server
-                cstate.server_life_id = msg.header.server_life_id
-                return 1
-        else:
-            cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
-            cstate.status = next_state
-            cstate.msg_errs += 1
-            return PROTOCOL_ERR_WRONG_ORDER
 
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil:
         """
         Client / server `activate` event handler
+        
         :param msg: 
         :return: 
         """
         #cybreakpoint(1)
         cdef ConnectionState * cstate
-        cdef ProtocolBaseMessage *msg_out
 
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
         else:
             cstate = self.get_state(b'')
 
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
-        cdef bint is_valid_life_id = self._check_life_id(cstate, msg)
-
-        if next_state == ProtocolStatus.UHF_ACTIVE and is_valid_life_id:
-            cstate.last_msg_time_ns = datetime_nsnow()
-            cstate.status = next_state
-            cstate.msg_recvd += 1
-
-            if self.is_server:
-                #
-                # Server must send a reply with its life id
-                #
-                cstate.msg_sent += 1
-                msg_out = self._make_msg(cstate, MSGT_ACTIVATE, next_state)
-                return self.transport.send(cstate.sender_id, msg_out, sizeof(ProtocolBaseMessage), no_copy=True)
-            else:
-                #
-                # Client doesn't reply but can continue initialization after that
-                #
-                return 1
-        else:
-            # Error in state transition
-            cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
-            cstate.status = next_state
-            cstate.msg_errs += 1
-            if is_valid_life_id:
-                return PROTOCOL_ERR_WRONG_ORDER
-            else:
-                return PROTOCOL_ERR_LIFE_ID
+        return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_ACTIVE, 1, MSGT_ACTIVATE)
 
     cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil:
         """
         Client / server `disconnect` event handler
+        
         :param msg: 
         :return: 
         """
         cyassert(self.is_server == 1) # Only servers must receive this command!
 
         cdef ConnectionState * cstate
-        cdef ProtocolBaseMessage *msg_out
 
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
         else:
             cstate = self.get_state(b'')
 
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
-        cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
-
-        if next_state == ProtocolStatus.UHF_INACTIVE:
-            cstate.last_msg_time_ns = datetime_nsnow()
-            cstate.status = next_state
-
-            if self.is_server:
-                cstate.msg_recvd += 1
-                cstate.client_life_id = 0
-                return 1
-            else:
-                # Only servers allowed to use this event handler
-                return PROTOCOL_ERR_WRONG_ORDER
-        else:
-            return PROTOCOL_ERR_WRONG_ORDER
+        return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_INACTIVE, 0, 0)
 
 
     cdef int on_heartbeat(self, ProtocolBaseMessage * msg) nogil:
-        cdef ConnectionState * cstate
-        cdef ProtocolBaseMessage *msg_out
-
+        """
+        A heartbeat message for maintaining connection granularity
+        
+        :param msg: 
+        :return: 
+        """
         if self.is_server:
             cstate = self.get_state(msg.header.sender_id)
         else:
             cstate = self.get_state(b'')
 
-        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
-        cdef bint is_valid_life_id = self._check_life_id(cstate, msg)
+        cdef int rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_ACTIVE, 1, MSGT_HEARTBEAT)
+        if rc > 0:
+            cstate.n_heartbeats += 1
+        return rc
 
-        if next_state == ProtocolStatus.UHF_ACTIVE and is_valid_life_id:
+    #
+    # Private methods
+    #
+    cdef int _send_command(self, ConnectionState * cstate, ProtocolStatus new_status, char msg_type) nogil:
+        """
+        Send generic client command
+        
+        :param cstate: current client connection state
+        :param new_status: expected next status transition
+        :param msg_type: message type to send to the server
+        :return: >0 on success, <= 0 on error
+        """
+        cyassert(self.is_server == 0)  # Only client can connect to the server!
+
+        cdef ProtocolStatus next_state = self._state_transition(cstate.status, new_status)
+        cyassert(next_state == new_status)
+        if next_state != new_status:
+            # Just is case if assert compiled out
+            return PROTOCOL_ERR_WRONG_ORDER
+
+        cdef ProtocolBaseMessage *msg = self._make_msg(cstate, msg_type, next_state)
+        cyassert(msg != NULL)
+        cstate.msg_sent += 1
+        return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
+
+    cdef int _on_msg_reply(self,
+                           ConnectionState * cstate,
+                           ProtocolBaseMessage *msg,
+                           ProtocolStatus expected_status,
+                           bint check_life_id,
+                           char server_reply_msg_type,
+                           ) nogil:
+        """
+        Generic reply handler for base protocol
+        
+        :param cstate: current state 
+        :param msg: incoming message
+        :param expected_status: expected status of `next_state` transition
+        :param check_life_id:  check if client_life_id / server_life_id match
+        :param server_reply_msg_type: if not 0, server must reply with a message type `server_reply_msg_type`
+        :return: > 0 if success, <= 0 on error
+        """
+
+        cdef ProtocolStatus next_state = self._state_transition(cstate.status, msg.status)
+        cdef bint is_valid_life_id = 1
+        if check_life_id:
+            is_valid_life_id = self._check_life_id(cstate, msg)
+
+        if next_state == expected_status and is_valid_life_id:
             cstate.last_msg_time_ns = datetime_nsnow()
             cstate.status = next_state
-            cstate.n_heartbeats += 1
             cstate.msg_recvd += 1
 
             if self.is_server:
                 #
                 # Server must send a reply with its life id
                 #
-                cstate.msg_sent += 1
-                msg_out = self._make_msg(cstate, MSGT_HEARTBEAT, next_state)
-                return self.transport.send(cstate.sender_id, msg_out, sizeof(ProtocolBaseMessage), no_copy=True)
+                if next_state == ProtocolStatus.UHF_INACTIVE:
+                    cstate.client_life_id = 0
+                else:
+                    cstate.client_life_id = msg.header.client_life_id
+
+                if server_reply_msg_type != 0:
+                    cstate.msg_sent += 1
+                    return self.transport.send(cstate.sender_id,
+                                               self._make_msg(cstate, server_reply_msg_type, next_state),
+                                               sizeof(ProtocolBaseMessage),
+                                               no_copy=True)
+                else:
+                    return 1
             else:
                 #
                 # Client doesn't reply but can continue initialization after that
                 #
+                if next_state == ProtocolStatus.UHF_INACTIVE:
+                    cstate.server_life_id = 0
+                else:
+                    cstate.server_life_id = msg.header.server_life_id
                 return 1
         else:
             # Error in state transition
             cyassert(next_state == ProtocolStatus.UHF_INACTIVE)
             cstate.status = next_state
             cstate.msg_errs += 1
+            if self.is_server:
+                cstate.client_life_id = 0
+            else:
+                cstate.server_life_id = msg.header.server_life_id
+
             if is_valid_life_id:
                 return PROTOCOL_ERR_WRONG_ORDER
             else:
@@ -299,11 +284,11 @@ cdef class ProtocolBase:
     cdef bint _check_life_id(self, ConnectionState *cstate, ProtocolBaseMessage *msg) nogil:
         """
         Make sure if server and client life id match
+        
         :param cstate: current state
         :param msg: incoming message
         :return: 
         """
-
         if self.is_server:
             return cstate.client_life_id == msg.header.client_life_id and cstate.server_life_id == self.server_life_id
         else:
