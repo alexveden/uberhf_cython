@@ -9,6 +9,7 @@ cdef extern from "uhfprotocols.h"  nogil:
 
     const uint16_t TRANSPORT_HDR_MGC
     const size_t TRANSPORT_SENDER_SIZE
+    const size_t V2_TICKER_MAX_LEN
 
     const int TRANSPORT_ERR_OK
     const int TRANSPORT_ERR_ZMQ
@@ -38,3 +39,5 @@ cdef extern from "uhfprotocols.h"  nogil:
     const int PROTOCOL_ERR_CLI_TIMEO
     const int PROTOCOL_ERR_SRV_TIMEO
     const int PROTOCOL_ERR_CLI_ERR
+    const int PROTOCOL_ERR_SRV_ERR
+    const int PROTOCOL_ERR_ARG_ERR

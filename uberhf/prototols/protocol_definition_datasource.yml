@@ -36,19 +36,19 @@ commands:
   heartbeat:
     inherits: protocol_base
 
-  emit_quote:
+  send_quote:
     initiator: client
     description: sends quote update for bid/ask/last for registered instruments
     required: state.active
     server_reply: no reply, but drops connection if error
 
-  emit_instrument_info:
+  send_instrument_info:
     initiator: client
     description: sends generic information update on instruments
     required: state.active
     server_reply: no reply, but drops connection if error
 
-  emit_status:
+  send_status:
     initiator: client
     description: sends information about exchange feed status / delays / health / trading session
     required: state.active

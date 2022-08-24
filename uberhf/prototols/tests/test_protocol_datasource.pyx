@@ -13,6 +13,7 @@ from uberhf.prototols.protocol_datasource cimport ProtocolDataSourceBase
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
+from uberhf.datafeed.datasource_mock cimport DataSourceMock
 
 from unittest.mock import MagicMock
 URL_BIND = b'tcp://*:7100'
@@ -47,11 +48,13 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                source = DatasourceAbstract()
+                source = DataSourceMock()
                 feed = UHFeedAbstract()
                 #cybreakpoint(1)
                 ps = ProtocolDataSourceBase(11, transport_s, None, feed)
                 pc = ProtocolDataSourceBase(22, transport_c, source, None)
+
+                source.register_protocol(pc)
 
                 s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
                 c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)

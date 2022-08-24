@@ -10,6 +10,8 @@
 #define TRANSPORT_HDR_MGC 29517
 #define TRANSPORT_SENDER_SIZE 5
 
+#define V2_TICKER_MAX_LEN 40
+
 //
 // Transport error codes
 //
@@ -38,4 +40,6 @@
 #define PROTOCOL_ERR_SRV_TIMEO    -55005
 #define PROTOCOL_ERR_CLI_TIMEO    -55006
 #define PROTOCOL_ERR_CLI_ERR      -55007
+#define PROTOCOL_ERR_SRV_ERR      -55008
+#define PROTOCOL_ERR_ARG_ERR      -55009
 

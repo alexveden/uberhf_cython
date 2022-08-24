@@ -1,17 +1,17 @@
-
+from libc.stdint cimport uint64_t
 
 cdef class UHFeedAbstract:
     """
     Abstract interface for the protocol calls
     """
-    cdef source_on_initialize(self):
+    cdef int source_on_initialize(self, ConnectionState * cstate) nogil:
         """
         Indicates that source wants to re-initialize its feed
         :return: 
         """
-        pass
+        return 1
 
-    cdef source_on_initialize_data(self):
+    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id) nogil:
         """
         Source sends initialization data
         :return: 

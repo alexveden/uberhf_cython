@@ -98,7 +98,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.msg_recvd == 0
                 assert cstate.msg_sent == 0
                 assert cstate.msg_errs == 0
-
+                #cyassert(0)
             except:
                 raise
             finally:

@@ -24,7 +24,6 @@ commands:
       on_success: state.connecting
       on_error: state.inactive
 
-
   initialize:
     initiator: client
     description: initialization of client/server connection
@@ -58,8 +57,8 @@ commands:
       - socket timeout
 
 command_handlers:
-  on_request_connect:
-    side: server
+  on_connect:
+    side: client / server
     description: handling incoming connections
     required: state.inactive
     client_request: client life id, client sender id
@@ -68,36 +67,25 @@ command_handlers:
       on_success: state.connecting
       on_error: state.inactive
 
-  on_reply_connect:
-    side: client
-    description: handling response from server on connection
-    required: state.inactive
-    server_reply: server life id
-    transition:
-      on_success: state.connecting
-      on_error: state.inactive
 
-  on_request_initialize:
-    side: server
-    description: handling incoming initialization (this method intended for overriding)
+  on_initialize:
+    side: client / server
+    description: handling incoming initialization
     required: state.connecting
-    client_request: some arbitrary message depending on child protocol
-    server_reply: server confirms of reject particular request by id
+    client_request: base message that notifies server that client is going 
+                    to start initialization sequence
+
+    server_reply: server confirms
     transition:
       on_success: state.initializing
       on_error: state.inactive
+    protocol_calls:
+      server: calls initialize_client() when gets this message
+      client: calls initialize_client() when gets servers response (after this client 
+              must send_activate or continue initialization)
 
-  on_reply_initialize:
-    side: client
-    description: handling individual initialization replies
-    required: state.initializing
-    server_reply: server confirms of reject particular request by id
-    transition:
-      on_success: state.initializing
-      on_error: state.inactive
-
-  on_request_activate:
-    side: server
+  on_activate:
+    side: client/server
     description: initialization is done, client ready to work
     required: state.initializing
     client_request: simple confirmation message
@@ -105,31 +93,17 @@ command_handlers:
     transition:
       on_success: state.active
       on_error: state.inactive
+    protocol_calls:
+      server: calls activate_client() when gets this message
+      client: calls activate_client() when gets servers response
 
-  on_reply_activate:
-    side: client
-    description:  server corfirms or reject client activation
-    required: state.initializing
-    server_reply: server confirms or reject total activation of the client
-    transition:
-      on_success: state.active
-      on_error: state.inactive
 
-  on_request_heartbeat:
-    side: server
+  on_heartbeat:
+    side: client/server
     description: check if connection is up, confirming if all is good
     required: state.active
     client_request: server life id, client life id
     server_reply: server life id, client life id - inactive if mismatch
-    transition:
-      on_success: state.active
-      on_error: state.inactive
-
-  on_reply_heartbeat:
-    side: client
-    description:  check if connection is up, confirming if all is good
-    required: state.active
-    server_reply: server confirms if server life id, client life id are matched
     transition:
       on_success: state.active
       on_error: state.inactive

@@ -1,18 +1,16 @@
+from libc.stdint cimport uint64_t
+
 
 cdef class DatasourceAbstract:
-    cdef int source_client_initialize(self) nogil:
+    cdef int source_on_initialize(self) nogil:
         """
         Indicates that source wants to re-initialize its feed
         :return: 
         """
         return 1
 
-    cdef source_send_initialize_data(self):
-        """
-        Source sends initialization data
-        :return: 
-        """
-        pass
+    cdef int source_on_register_instrument(self, char * v2_ticker, uint64_t instrument_id, int error_code, int instrument_index) nogil:
+        return -1
 
     cdef source_send_activate(self):
         """

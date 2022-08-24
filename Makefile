@@ -19,7 +19,7 @@ TEST_EXEC:=pytest
 .PHONY: build build-debug tests coverage annotate debug-file debug-tests debug-valgrind run clean
 
 build-production:
-	$(CYTOOL) build
+	$(CYTOOL) -vvvv build
 
 build:
 	$(CYTOOL) build --debug --annotate
@@ -28,7 +28,7 @@ build-debug:
 	$(CYTOOL) build --debug --annotate
 
 tests: build-debug
-	export PYTHONPATH=$(PROJ_ROOT):$(PYTHONPATH); python -m $(TEST_EXEC) $(p)
+	export PYTHONPATH=$(PROJ_ROOT):$(PYTHONPATH); python -m $(TEST_EXEC) --override-ini=cache_dir=$(PROJ_ROOT)/.cython_tools/.pytest_cache $(p)
 
 tests-debug: build-debug
 	$(CYTOOL) debug -t $(p)
