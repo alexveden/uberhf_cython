@@ -229,7 +229,6 @@ cdef class ProtocolBase:
 
         if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != self.protocol_id:
             # Protocol doesn't match
-            cyassert(rc != 0)
             return rc
 
         if proto_msg.header.msg_type == MSGT_HEARTBEAT:
