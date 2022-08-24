@@ -11,7 +11,11 @@ from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 from uberhf.prototols.protocol_base cimport ProtocolBase
 
 
-DEF MSGT_INIT = b'I'
+# Set child protocol message types in lower case to avoid conflicts with BaseProtocol
+DEF MSGT_INIT = b'i'
+DEF MSGT_QUOTE = b'q'
+DEF MSGT_IINFO = b'o'
+
 
 cdef class ProtocolDataSourceBase(ProtocolBase):
     def __cinit__(self, module_id, transport, source_client = None, feed_server = None, heartbeat_interval_sec=5):
@@ -37,13 +41,45 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         if self.is_server:
             self.feed_server.source_on_disconnect(cstate)
         else:
-            self.source_client.source_on_disconnect(cstate)
+            self.source_client.source_on_disconnect()
 
     cdef int initialize_client(self, ConnectionState * cstate) nogil:
+        cyassert (self.is_server == 0) # Only clients allowed to call this method
+        cdef int rc = 0
+
         # Send notification to the core that client is going to be initialized!
-        return ProtocolBase.initialize_client(self, cstate)
+        #rc = self.source_client.source_client_initialize()
+        rc = ProtocolBase.initialize_client(self, cstate)
+        if rc > 0:
+            return rc
+        else:
+            return PROTOCOL_ERR_CLI_ERR
 
+    cdef int on_initialize(self) nogil:
+        pass
 
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
+        cdef TransportHeader * hdr = <TransportHeader *> msg
+        cdef int rc = 0
+
+        if hdr.protocol_id != self.protocol_id:
+            # Protocol doesn't match
+            cyassert(0)
+            return rc
+
+        # In order from the most frequent to less frequent
+        if hdr.msg_type == MSGT_QUOTE:
+            cyassert(0)
+        elif hdr.msg_type == MSGT_IINFO:
+            cyassert(0)
+        elif hdr.msg_type == MSGT_INIT:
+            # Source initialization request/reply
+            cyassert(0)
+        else:
+            rc = ProtocolBase.on_process_new_message(self, msg, msg_size)
+            cyassert(rc != 0)
+
+        return rc
 
 
 

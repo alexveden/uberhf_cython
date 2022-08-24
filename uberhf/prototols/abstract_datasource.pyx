@@ -1,11 +1,11 @@
 
 cdef class DatasourceAbstract:
-    cdef source_send_initialize(self):
+    cdef int source_client_initialize(self) nogil:
         """
         Indicates that source wants to re-initialize its feed
         :return: 
         """
-        pass
+        return 1
 
     cdef source_send_initialize_data(self):
         """
@@ -24,11 +24,10 @@ cdef class DatasourceAbstract:
     cdef source_send_disconnect(self):
         pass
 
-    cdef void source_on_disconnect(self, ConnectionState * cstate) nogil:
-        """
-        Source notifies about disconnection
-        :return: 
-        """
+    cdef void source_on_disconnect(self) nogil:
+        return
+
+    cdef void source_on_activate(self) nogil:
         pass
 
 

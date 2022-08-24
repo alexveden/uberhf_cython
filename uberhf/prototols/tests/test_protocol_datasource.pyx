@@ -64,12 +64,14 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                     socks = dict(poller.poll(50))
                     if s_socket in socks and socks[s_socket] == zmq.POLLIN:
                         transport_data = transport_s.receive(&msg_size)
-                        assert ps.on_process_new_message(transport_data, msg_size) > 0
+                        rc = ps.on_process_new_message(transport_data, msg_size)
                         transport_s.receive_finalize(transport_data)
+                        assert rc > 0, rc #f"{rc} - {transport_c.get_last_error_str(transport_c.get_last_error())}"
                     if c_socket in socks and socks[c_socket] == zmq.POLLIN:
                         transport_data = transport_c.receive(&msg_size)
-                        assert pc.on_process_new_message(transport_data, msg_size) > 0
+                        rc = pc.on_process_new_message(transport_data, msg_size)
                         transport_c.receive_finalize(transport_data)
+                        assert rc > 0, rc #f"{rc} - {transport_c.get_last_error_str(transport_c.get_last_error())}"
 
                     dt_now = datetime_nsnow()
                     if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:

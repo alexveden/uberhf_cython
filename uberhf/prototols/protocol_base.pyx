@@ -224,20 +224,30 @@ cdef class ProtocolBase:
         :param msg_size: msg size
         :return: 0 if protocol didn't match, or return code of the message handler (>0 ok, < 0 error) 
         """
+        cdef int rc = 0
         cdef ProtocolBaseMessage * proto_msg = <ProtocolBaseMessage *> msg
 
         if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != self.protocol_id:
             # Protocol doesn't match
-            return 0
+            cyassert(rc != 0)
+            return rc
 
         if proto_msg.header.msg_type == MSGT_HEARTBEAT:
-            return self.on_heartbeat(proto_msg)
+            rc = self.on_heartbeat(proto_msg)
+            cyassert(rc != 0)
+            return rc
         elif proto_msg.header.msg_type == MSGT_CONNECT:
-            return self.on_connect(proto_msg)
+            rc = self.on_connect(proto_msg)
+            cyassert(rc != 0)
+            return rc
         elif proto_msg.header.msg_type == MSGT_ACTIVATE:
-            return self.on_activate(proto_msg)
+            rc = self.on_activate(proto_msg)
+            cyassert(rc != 0)
+            return rc
         elif proto_msg.header.msg_type == MSGT_DISCONNECT:
-            return self.on_disconnect(proto_msg)
+            rc = self.on_disconnect(proto_msg)
+            cyassert(rc != 0)
+            return rc
         else:
             return PROTOCOL_ERR_WRONG_TYPE
 

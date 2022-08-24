@@ -37,3 +37,4 @@ cdef extern from "uhfprotocols.h"  nogil:
     const int PROTOCOL_ERR_LIFE_ID
     const int PROTOCOL_ERR_CLI_TIMEO
     const int PROTOCOL_ERR_SRV_TIMEO
+    const int PROTOCOL_ERR_CLI_ERR

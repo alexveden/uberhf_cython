@@ -15,3 +15,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
 
     cdef int initialize_client(self, ConnectionState * cstate) nogil
+
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil
+
+    cdef int on_initialize(self) nogil
