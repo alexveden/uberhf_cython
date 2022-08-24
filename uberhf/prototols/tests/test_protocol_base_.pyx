@@ -26,6 +26,11 @@ cdef inline bint transport_receive(Transport transport, ProtocolBaseMessage **ms
     transport.receive_finalize(transport_data)
     return 1
 
+cdef class ProtocolBaseTest(ProtocolBase):
+    def __cinit__(self, is_server, module_id, transport, heartbeat_interval_sec=5):
+        ProtocolBase.protocol_initialize(self, PROTOCOL_ID_BASE, is_server, module_id, transport, heartbeat_interval_sec)
+
+
 class CyProtocolBaseTestCase(unittest.TestCase):
 
     def test_protocol_init(self):
@@ -37,8 +42,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT , ZMQ_DEALER, b'CLI')
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 assert ps.connections.item_size == sizeof(ConnectionState)
 
@@ -70,8 +75,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 cstate = ps.get_state(b'TEST')
                 assert cstate.sender_id == b'TEST'
@@ -118,8 +123,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -217,8 +222,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -281,8 +286,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -351,8 +356,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -403,8 +408,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 assert ps._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_CONNECTING
                 assert pc._state_transition(ProtocolStatus.UHF_INACTIVE, ProtocolStatus.UHF_CONNECTING) == ProtocolStatus.UHF_CONNECTING
@@ -468,8 +473,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -531,8 +536,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 #
                 # Initial connection request
@@ -606,8 +611,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
 
                 assert pc.heartbeat(datetime_nsnow()) >= 0
@@ -652,8 +657,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s)
-                pc = ProtocolBase(False, 22, transport_c)
+                ps = ProtocolBaseTest(True, 11, transport_s)
+                pc = ProtocolBaseTest(False, 22, transport_c)
 
                 s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
                 c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
@@ -709,7 +714,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             try:
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                pc = ProtocolBase(False, 22, transport_c, heartbeat_interval_sec=0.05)
+                pc = ProtocolBaseTest(False, 22, transport_c, heartbeat_interval_sec=0.05)
 
                 c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
                 poller = zmq.Poller()
@@ -770,8 +775,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
 
-                ps = ProtocolBase(True, 11, transport_s, heartbeat_interval_sec=0.05)
-                pc = ProtocolBase(False, 22, transport_c, heartbeat_interval_sec=0.05)
+                ps = ProtocolBaseTest(True, 11, transport_s, heartbeat_interval_sec=0.05)
+                pc = ProtocolBaseTest(False, 22, transport_c, heartbeat_interval_sec=0.05)
 
                 s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
                 c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)

@@ -14,13 +14,15 @@ DEF MSGT_DISCONNECT = b'D'
 DEF MSGT_HEARTBEAT = b'H'
 
 cdef class ProtocolBase:
-    def __cinit__(self, is_server, module_id, transport, heartbeat_interval_sec=5):
-        self.protocol_initialize(is_server, module_id, transport, heartbeat_interval_sec)
+    # Skipping __cinit__ - to allow child classes to have arbitrary constructor arguments!
+    #def __cinit__(self, is_server, module_id, transport, heartbeat_interval_sec=5):
+    #    self.protocol_initialize(PROTOCOL_ID_BASE, is_server, module_id, transport, heartbeat_interval_sec)
 
-    cdef void protocol_initialize(self, bint is_server, int module_id, Transport transport, double heartbeat_interval_sec):
+    cdef void protocol_initialize(self, char protocol_id, bint is_server, int module_id, Transport transport, double heartbeat_interval_sec):
         """
         Basic constructor method to make sure the class inheritance work
         
+        :param protocol_id: unique protocol ID
         :param is_server: 1 - protocol instance is a server, 0 - is client
         :param module_id: unique module id between (0;40)        
         :param transport: Transport instance, must be ZMQ_ROUTER for server, ZMQ_DEALER for client!
@@ -30,6 +32,7 @@ cdef class ProtocolBase:
         assert module_id >0 and module_id < 40, 'Module ID must be >0 and < 40'
         assert heartbeat_interval_sec > 0 and heartbeat_interval_sec < 300, 'heartbeat_interval_sec expected between (0, 300) seconds'
 
+        self.protocol_id = protocol_id
         self.is_server = is_server
         if is_server:
             assert (transport.socket_type == ZMQ_ROUTER), f'Server transport must be ZMQ_ROUTER'
@@ -215,7 +218,7 @@ cdef class ProtocolBase:
         """
         Generic protocol message processor,
 
-        supports only ProtocolBaseMessage with PROTOCOL_ID_BASE
+        supports only ProtocolBaseMessage
 
         :param msg: generic message 
         :param msg_size: msg size
@@ -223,7 +226,7 @@ cdef class ProtocolBase:
         """
         cdef ProtocolBaseMessage * proto_msg = <ProtocolBaseMessage *> msg
 
-        if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != PROTOCOL_ID_BASE:
+        if msg_size != sizeof(ProtocolBaseMessage) or proto_msg.header.protocol_id != self.protocol_id:
             # Protocol doesn't match
             return 0
 
@@ -431,7 +434,7 @@ cdef class ProtocolBase:
         cyassert(msg_type != 0) # Real char allowed
 
         cdef ProtocolBaseMessage *msg_out = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
-        msg_out.header.protocol_id = PROTOCOL_ID_BASE
+        msg_out.header.protocol_id = self.protocol_id
         msg_out.header.msg_type = msg_type
         msg_out.header.server_life_id = cstate.server_life_id
         msg_out.header.client_life_id = cstate.client_life_id
