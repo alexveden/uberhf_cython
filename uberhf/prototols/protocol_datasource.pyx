@@ -44,19 +44,10 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
             self.source_client.source_on_disconnect()
 
     cdef int initialize_client(self, ConnectionState * cstate) nogil:
-        cyassert (self.is_server == 0) # Only clients allowed to call this method
-        cdef int rc = 0
+        return 1
 
-        # Send notification to the core that client is going to be initialized!
-        #rc = self.source_client.source_client_initialize()
-        rc = ProtocolBase.initialize_client(self, cstate)
-        if rc > 0:
-            return rc
-        else:
-            return PROTOCOL_ERR_CLI_ERR
-
-    cdef int on_initialize(self) nogil:
-        pass
+    cdef int activate_client(self, ConnectionState * cstate) nogil:
+        return 1
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
         cdef TransportHeader * hdr = <TransportHeader *> msg

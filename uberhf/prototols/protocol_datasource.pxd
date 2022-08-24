@@ -13,9 +13,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     cdef UHFeedAbstract feed_server
 
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
-
     cdef int initialize_client(self, ConnectionState * cstate) nogil
+    cdef int activate_client(self, ConnectionState * cstate) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil
-
-    cdef int on_initialize(self) nogil

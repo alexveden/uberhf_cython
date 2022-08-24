@@ -186,7 +186,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.msg_sent == 2
                 assert cstate.msg_recvd == 1
 
-                # Client sends immediately activate command!
+                # Client sends immediately initialize command!
 
                 assert transport_receive(transport_s, &msg)
 
@@ -195,6 +195,44 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.client_life_id == pc.client_life_id
                 assert msg.header.protocol_id == PROTOCOL_ID_BASE
                 assert msg.header.sender_id == b'CLI'
+                assert msg.header.msg_type == b'I'
+                assert msg.header.magic_number == TRANSPORT_HDR_MGC
+                assert msg.status == ProtocolStatus.UHF_INITIALIZING
+
+                # Server confirms initialization command
+                assert ps.on_initialize(msg) > 0
+                assert transport_receive(transport_c, &msg)
+
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert msg.header.protocol_id == PROTOCOL_ID_BASE
+                assert msg.header.sender_id == b'SRV'
+                assert msg.header.msg_type == b'I'
+                assert msg.header.magic_number == TRANSPORT_HDR_MGC
+                assert msg.status == ProtocolStatus.UHF_INITIALIZING
+
+                #
+                # After getting confirmation the client sends activate
+                #
+                assert pc.on_initialize(msg) > 0
+                assert transport_receive(transport_s, &msg)
+
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert msg.header.protocol_id == PROTOCOL_ID_BASE
+                assert msg.header.sender_id == b'CLI'
+                assert msg.header.msg_type == b'A'
+                assert msg.header.magic_number == TRANSPORT_HDR_MGC
+                assert msg.status == ProtocolStatus.UHF_ACTIVE
+
+                # Server processes on_activate and respond to the client
+                assert ps.on_activate(msg) > 0
+                assert transport_receive(transport_c, &msg)
+
+                assert cstate.server_life_id == ps.server_life_id
+                assert cstate.client_life_id == pc.client_life_id
+                assert msg.header.protocol_id == PROTOCOL_ID_BASE
+                assert msg.header.sender_id == b'SRV'
                 assert msg.header.msg_type == b'A'
                 assert msg.header.magic_number == TRANSPORT_HDR_MGC
                 assert msg.status == ProtocolStatus.UHF_ACTIVE
@@ -225,6 +263,9 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
 
+                cstate = pc.get_state(b'')
+                sstate = ps.get_state(b'CLI')
+
                 #
                 # Initial connection request
                 #
@@ -239,28 +280,33 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 # This will be sent automatically pc.on_connect()
                 #assert pc.send_activate() > 0
                 assert transport_receive(transport_s, &msg)
-                assert ps.on_activate(msg) > 0
+                assert ps.on_initialize(msg)
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_initialize(msg) > 0
+                assert sstate.status == ProtocolStatus.UHF_INITIALIZING
+                assert cstate.status == ProtocolStatus.UHF_INITIALIZING
 
-                sstate = ps.get_state(b'CLI')
-                assert sstate != NULL
-                assert sstate.client_life_id == pc.client_life_id
-                assert sstate.server_life_id == ps.server_life_id
-                assert sstate.msg_sent == 2
-                assert sstate.msg_recvd == 2
-                assert sstate.msg_errs == 0
-                assert sstate.status == ProtocolStatus.UHF_ACTIVE
-
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_activate(msg)
                 assert transport_receive(transport_c, &msg)
                 assert pc.on_activate(msg) > 0
 
-                cstate = pc.get_state(b'')
+
+                assert sstate != NULL
+                assert sstate.client_life_id == pc.client_life_id
+                assert sstate.server_life_id == ps.server_life_id
+                assert sstate.msg_sent == 3
+                assert sstate.msg_recvd == 3
+                assert sstate.msg_errs == 0
+                assert sstate.status == ProtocolStatus.UHF_ACTIVE
+
                 assert cstate != NULL
                 assert cstate.server_life_id == ps.server_life_id
                 assert cstate.client_life_id == pc.client_life_id
                 assert cstate.status == ProtocolStatus.UHF_ACTIVE
                 assert cstate.msg_errs == 0
-                assert cstate.msg_sent == 2
-                assert cstate.msg_recvd == 2
+                assert cstate.msg_sent == 3
+                assert cstate.msg_recvd == 3
 
             except:
                 raise
@@ -297,7 +343,12 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert ps.on_connect(msg) > 0
                 assert transport_receive(transport_c, &msg)
                 assert pc.on_connect(msg) > 0
-                #assert pc.send_activate() > 0
+
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_initialize(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_initialize(msg) > 0
+
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_activate(msg) > 0
                 assert transport_receive(transport_c, &msg)
@@ -309,8 +360,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.client_life_id == pc.client_life_id
                 assert cstate.status == ProtocolStatus.UHF_ACTIVE
                 assert cstate.msg_errs == 0
-                assert cstate.msg_sent == 2
-                assert cstate.msg_recvd == 2
+                assert cstate.msg_sent == 3
+                assert cstate.msg_recvd == 3
 
                 assert pc.send_disconnect() > 0
                 cstate = pc.get_state(b'')
@@ -319,8 +370,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.client_life_id == pc.client_life_id
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE
                 assert cstate.msg_errs == 0
-                assert cstate.msg_sent == 3
-                assert cstate.msg_recvd == 2
+                assert cstate.msg_sent == 4
+                assert cstate.msg_recvd == 3
 
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_disconnect(msg) > 0
@@ -328,8 +379,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert sstate != NULL
                 assert sstate.client_life_id == 0
                 assert sstate.server_life_id == ps.server_life_id
-                assert sstate.msg_sent == 2
-                assert sstate.msg_recvd == 3
+                assert sstate.msg_sent == 3
+                assert sstate.msg_recvd == 4
                 assert sstate.msg_errs == 0
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE
 
@@ -484,6 +535,11 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert ps.on_connect(msg) > 0
                 assert transport_receive(transport_c, &msg)
                 assert pc.on_connect(msg) > 0
+
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_initialize(msg) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_initialize(msg) > 0
                 #
                 # Activating client
                 #
@@ -548,9 +604,17 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert transport_receive(transport_c, &msg)
                 assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
                 #
+                # Initializing client
+                #
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+
+                #
                 # Activating client
                 #
-                #assert pc.send_activate() > 0
+
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
                 assert transport_receive(transport_c, &msg)
@@ -616,6 +680,10 @@ class CyProtocolBaseTestCase(unittest.TestCase):
 
 
                 assert pc.heartbeat(datetime_nsnow()) >= 0
+                assert transport_receive(transport_s, &msg)
+                assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
+                assert transport_receive(transport_c, &msg)
+                assert pc.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
                 assert transport_receive(transport_s, &msg)
                 assert ps.on_process_new_message(msg, sizeof(ProtocolBaseMessage)) > 0
                 assert transport_receive(transport_c, &msg)

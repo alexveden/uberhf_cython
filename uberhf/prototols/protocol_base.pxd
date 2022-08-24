@@ -38,6 +38,9 @@ cdef class ProtocolBase:
     cdef int send_connect(self) nogil
     cdef int on_connect(self, ProtocolBaseMessage * msg) nogil
 
+    cdef int send_initialize(self) nogil
+    cdef int on_initialize(self, ProtocolBaseMessage * msg) nogil
+
     cdef int send_activate(self) nogil
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil
 
@@ -50,8 +53,12 @@ cdef class ProtocolBase:
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil
     cdef int heartbeat(self, long dtnow) nogil
 
+    #
+    # Methods for child classes
+    #
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
     cdef int initialize_client(self, ConnectionState * cstate) nogil
+    cdef int activate_client(self, ConnectionState * cstate) nogil
 
     #
     # Private methods

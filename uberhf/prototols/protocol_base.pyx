@@ -9,6 +9,7 @@ from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id, tim
 from uberhf.prototols.libzmq cimport *
 
 DEF MSGT_CONNECT = b'C'
+DEF MSGT_INITIALIZE = b'I'
 DEF MSGT_ACTIVATE = b'A'
 DEF MSGT_DISCONNECT = b'D'
 DEF MSGT_HEARTBEAT = b'H'
@@ -101,6 +102,17 @@ cdef class ProtocolBase:
         cstate.last_msg_time_ns = datetime_nsnow()
         return self._send_command(cstate, ProtocolStatus.UHF_CONNECTING, MSGT_CONNECT)
 
+    cdef int send_initialize(self) nogil:
+        """
+        Initialize protocol (typically exchanging internal states)
+
+        :return: 
+        """
+        cyassert(self.is_server == 0)  # Only client can connect to the server!
+
+        cdef ConnectionState * cstate = self.get_state(b'')
+        return self._send_command(cstate, ProtocolStatus.UHF_INITIALIZING, MSGT_INITIALIZE)
+
     cdef int send_activate(self) nogil:
         """
         Client connection activation
@@ -155,9 +167,30 @@ cdef class ProtocolBase:
             cstate = self.get_state(b'')
             rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_CONNECTING, 0, MSGT_CONNECT)
             if rc > 0:
-                return self.initialize_client(cstate)
+                return self.send_initialize()
             else:
                 return rc
+
+    cdef int on_initialize(self, ProtocolBaseMessage * msg) nogil:
+        """
+        Client / server `initialize` event handler
+
+        :param msg: 
+        :return: 
+        """
+        #cybreakpoint(1)
+        cdef ConnectionState * cstate
+
+        if self.is_server:
+            cstate = self.get_state(msg.header.sender_id)
+        else:
+            cstate = self.get_state(b'')
+
+        cdef int rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_INITIALIZING, 1, MSGT_INITIALIZE)
+        if rc > 0:
+            return self.initialize_client(cstate)
+        else:
+            return rc
 
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil:
         """
@@ -174,7 +207,11 @@ cdef class ProtocolBase:
         else:
             cstate = self.get_state(b'')
 
-        return self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_ACTIVE, 1, MSGT_ACTIVATE)
+        cdef int rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_ACTIVE, 1, MSGT_ACTIVATE)
+        if rc > 0:
+            return self.activate_client(cstate)
+        else:
+            return rc
 
     cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil:
         """
@@ -239,6 +276,10 @@ cdef class ProtocolBase:
             rc = self.on_connect(proto_msg)
             cyassert(rc != 0)
             return rc
+        elif proto_msg.header.msg_type == MSGT_INITIALIZE:
+            rc = self.on_initialize(proto_msg)
+            cyassert(rc != 0)
+            return rc
         elif proto_msg.header.msg_type == MSGT_ACTIVATE:
             rc = self.on_activate(proto_msg)
             cyassert(rc != 0)
@@ -252,18 +293,46 @@ cdef class ProtocolBase:
 
     cdef int initialize_client(self, ConnectionState * cstate) nogil:
         """
-        Initializes connection sequence immediately after connection was confirmed by the server
+        Initialization of the new connection
         
-        Only for clients!  Can be overridden by child class to maintain custom initialization 
+        - server gets this command when the client requests: send_initialize()
+        - client gets this command when the server reply on_initialize()
+        
+        So server can set its internal state of the client, and the client can begin initialization sequence or just send_activate()
+        
+        This is client/server method!      
+          
+        :param cstate: 
+        :return: 
+        """
+        if self.is_server:
+            # Just confirms client initialization
+            return 1
+        else:
+            # By default let's send activate command
+            return self.send_activate()
+
+    cdef int activate_client(self, ConnectionState * cstate) nogil:
+        """
+        Activation of the initialized connection
+        
+         - server gets this command when the client requests: send_activate()
+        - client gets this command when the server reply on_activate()
+        
+        So server can set its internal state of the client, and the protocol goes into active state
+        
+        This is client/server method!     
         
         :param cstate: 
         :return: 
         """
-        return self.send_activate()
+        return 1
 
     cdef void disconnect_client(self, ConnectionState * cstate) nogil:
         """
         Set internal connection state as disconnected, this method should also be overridden by child classes for additional logic
+        
+        This is client/server method!     
         
         :param cstate: 
         :return: 
