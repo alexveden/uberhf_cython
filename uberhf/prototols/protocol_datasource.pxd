@@ -22,6 +22,6 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil
 
     cdef int send_new_quote(self, ProtocolDSQuoteMessage * qmsg, int send_no_copy) nogil
-    cdef int on_new_quote(self, ProtocolDSQuoteMessage * msg) nogil
+    #cdef int on_new_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil

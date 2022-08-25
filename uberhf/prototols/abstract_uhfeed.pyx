@@ -38,9 +38,9 @@ cdef class UHFeedAbstract:
         """
         return -1
 
-    cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
+    cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
         """
         Source sends initialization data
         :return: 
         """
-        return -1
+        return

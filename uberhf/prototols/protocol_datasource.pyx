@@ -113,8 +113,11 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
             return rc
 
         # In order from the most frequent to less frequent
-        # if hdr.msg_type == MSGT_QUOTE:
-        #     cyassert(0)
+        if hdr.msg_type == MSGT_QUOTE:
+            if msg_size != sizeof(ProtocolDSQuoteMessage):
+                return PROTOCOL_ERR_SIZE
+            self.feed_server.source_on_quote(<ProtocolDSQuoteMessage*>msg)
+            return 1
         # elif hdr.msg_type == MSGT_IINFO:
         #     cyassert(0)
         if hdr.msg_type == MSGT_REGISTER:
@@ -176,17 +179,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         cyassert(msg != NULL)
         cyassert(msg.header.msg_type == MSGT_QUOTE)
 
-        return self.transport.send(NULL, msg, sizeof(ProtocolDSRegisterMessage), no_copy=send_no_copy)
-
-    cdef int on_new_quote(self, ProtocolDSQuoteMessage * msg) nogil:
-        cyassert(self.is_server == 1) # Only servers allowed
-        cyassert(msg != NULL)
-
-        cdef int rc = self.feed_server.source_on_quote(msg)
-        if rc > 0:
-            return 1
-        else:
-            return PROTOCOL_ERR_SRV_ERR
+        return self.transport.send(NULL, msg, sizeof(ProtocolDSQuoteMessage), no_copy=send_no_copy)
 
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil:
         """

@@ -162,6 +162,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert sstate.msg_recvd == 1
                 assert sstate.msg_errs == 0
                 assert sstate.status == ProtocolStatus.UHF_CONNECTING
+                assert ps.client_life_id == 0
 
                 #
                 # CLIENT RECEIVES CONNECTION REPLY FROM THE SERVER
@@ -185,6 +186,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert cstate.msg_errs == 0
                 assert cstate.msg_sent == 2
                 assert cstate.msg_recvd == 1
+                assert pc.server_life_id == ps.server_life_id
 
                 # Client sends immediately initialize command!
 
@@ -383,6 +385,9 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 assert sstate.msg_recvd == 4
                 assert sstate.msg_errs == 0
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE
+
+                assert pc.server_life_id == 0
+
 
             except:
                 raise
@@ -905,6 +910,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 sstate = ps.get_state(b'CLI')
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE
                 assert sstate.client_life_id == 0
+                assert pc.server_life_id == 0
 
             except:
                 raise

@@ -345,6 +345,7 @@ cdef class ProtocolBase:
             cstate.client_life_id = 0
         else:
             cstate.server_life_id = 0
+            self.server_life_id = 0
 
     cdef int heartbeat(self, long dtnow) nogil:
         """
@@ -469,8 +470,10 @@ cdef class ProtocolBase:
                 #
                 if next_state == ProtocolStatus.UHF_INACTIVE:
                     cstate.server_life_id = 0
+                    self.server_life_id = 0
                 else:
                     cstate.server_life_id = msg.header.server_life_id
+                    self.server_life_id = msg.header.server_life_id
                 return 1
         else:
             # Error in state transition
@@ -480,7 +483,8 @@ cdef class ProtocolBase:
             if self.is_server:
                 cstate.client_life_id = 0
             else:
-                cstate.server_life_id = msg.header.server_life_id
+                cstate.server_life_id = 0
+                self.server_life_id = 0
 
             if is_valid_life_id:
                 return PROTOCOL_ERR_WRONG_ORDER

@@ -1,10 +1,11 @@
-from uberhf.prototols.transport cimport Transport, TransportHeader
+from uberhf.prototols.transport cimport Transport
 from uberhf.prototols.libzmq cimport *
 from zmq.backend.cython.context cimport Context
 from libc.stdint cimport uint64_t
 from libc.string cimport strcpy, memset, memcpy
 from libc.stdio cimport printf
 #from zmq import Context
+from uberhf.prototols.messages cimport *
 import time
 
 ctypedef struct SomeMessage:

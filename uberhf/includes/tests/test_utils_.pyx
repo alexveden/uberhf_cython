@@ -86,7 +86,7 @@ class CyUtilsTestCase(unittest.TestCase):
         now_start = datetime_nsnow()
         sleep_ns(1.0)
         now = datetime_nsnow()
-        self.assertAlmostEqual(timedelta_ns(now, now_start, TIMEDELTA_SEC), 1, 3)
+        self.assertAlmostEqual(timedelta_ns(now, now_start, TIMEDELTA_SEC), 1, delta=0.002)
 
         now_start = datetime_nsnow()
         sleep_ns(0.1)

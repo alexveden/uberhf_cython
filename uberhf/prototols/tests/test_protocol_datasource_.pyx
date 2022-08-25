@@ -9,7 +9,8 @@ from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
-from uberhf.prototols.protocol_datasource cimport ProtocolDataSourceBase, ProtocolDSRegisterMessage
+from uberhf.prototols.protocol_datasource cimport ProtocolDataSourceBase
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
@@ -24,9 +25,11 @@ cdef class UHFeedMock(UHFeedAbstract):
     cdef int on_initialize_ncalls
     cdef int on_disconnect_ncalls
     cdef int on_activate_ncalls
+
     cdef int on_register_n_ok
     cdef int on_register_n_err
     cdef size_t n_unique_tickers
+    cdef int quotes_processed
     cdef HashMap hm_tickers
 
     def __cinit__(self):
@@ -36,6 +39,8 @@ cdef class UHFeedMock(UHFeedAbstract):
         self.on_register_n_ok = 0
         self.on_register_n_err = 0
         self.n_unique_tickers = 0
+        self.quotes_processed = 0
+
         self.hm_tickers = HashMap(50)
 
     cdef void register_datasource_protocol(self, object protocol):
@@ -71,6 +76,13 @@ cdef class UHFeedMock(UHFeedAbstract):
             # Mimic in mem index
             return self.n_unique_tickers
 
+    cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
+        cyassert(msg.instrument_id == 1234)
+        cyassert(msg.instrument_index == 1)
+        cyassert(msg.quote.bid == 100)
+        cyassert(msg.quote.ask == 200)
+        self.quotes_processed += 1
+
 cdef class DataSourceMock(DatasourceAbstract):
     cdef ProtocolDataSourceBase protocol
     cdef int on_initialize_ncalls
@@ -80,6 +92,7 @@ cdef class DataSourceMock(DatasourceAbstract):
     cdef int on_register_n_err
     cdef size_t n_unique_tickers
     cdef HashMap hm_tickers
+    cdef int quotes_sent
 
     def __cinit__(self):
         self.on_activate_ncalls = 0
@@ -88,6 +101,7 @@ cdef class DataSourceMock(DatasourceAbstract):
         self.on_register_n_ok = 0
         self.on_register_n_err = 0
         self.n_unique_tickers = 0
+        self.quotes_sent = 0
         self.hm_tickers = HashMap(50)
 
     cdef void register_datasource_protocol(self, object protocol):
@@ -106,6 +120,20 @@ cdef class DataSourceMock(DatasourceAbstract):
 
     cdef void source_on_activate(self) nogil:
         self.on_activate_ncalls += 1
+
+        cdef ProtocolDSQuoteMessage msg = ProtocolDSQuoteMessage()
+        msg.header.msg_type = b'q'
+        msg.header.protocol_id = self.protocol.protocol_id
+        msg.header.client_life_id = self.protocol.client_life_id
+        msg.header.server_life_id = self.protocol.server_life_id
+
+        msg.instrument_id = 1234
+        msg.instrument_index = 1
+        msg.is_snapshot = 0
+        msg.quote.bid = 100
+        msg.quote.ask = 200
+        if self.protocol.send_new_quote(&msg, send_no_copy=0) > 0:
+            self.quotes_sent += 1
 
     cdef int source_on_register_instrument(self, char * v2_ticker, uint64_t instrument_id, int error_code, int instrument_index) nogil:
         cdef int rc = 0
@@ -223,6 +251,9 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
 
                 assert source.on_disconnect_ncalls == 1
                 assert feed.on_disconnect_ncalls == 1
+
+                assert source.quotes_sent == 1
+                assert feed.quotes_processed == 1
 
                 cstate = pc.get_state(b'')
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
