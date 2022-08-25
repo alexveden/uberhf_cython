@@ -8,7 +8,7 @@
 
 
 #define TRANSPORT_HDR_MGC 29517
-#define TRANSPORT_SENDER_SIZE 5
+#define TRANSPORT_SENDER_SIZE 6  // 5 chars + 1 for null terminator
 
 #define V2_TICKER_MAX_LEN 40
 

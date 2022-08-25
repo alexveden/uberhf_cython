@@ -4,7 +4,7 @@ from uberhf.includes.hashmap cimport HashMap
 
 ctypedef struct ConnectionState:
     # Keep sender_id as first item to allow HashMap seek by string
-    char sender_id[TRANSPORT_SENDER_SIZE + 1]
+    char sender_id[TRANSPORT_SENDER_SIZE]
     unsigned int server_life_id
     unsigned int client_life_id
     ProtocolStatus status

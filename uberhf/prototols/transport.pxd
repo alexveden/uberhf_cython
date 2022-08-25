@@ -5,13 +5,14 @@ from libc.stdint cimport uint16_t
 
 ctypedef struct TransportHeader:
     uint16_t magic_number
-    char sender_id[TRANSPORT_SENDER_SIZE + 1]
+    char sender_id[TRANSPORT_SENDER_SIZE]
     char protocol_id
     char msg_type
     unsigned int server_life_id
     unsigned int client_life_id
 
 
+cdef size_t zmq_free_count = 0
 
 cdef class Transport:
     """
@@ -37,7 +38,7 @@ cdef class Transport:
     cdef int get_last_error(self) nogil
     cdef const char* get_last_error_str(self, int errnum) nogil
 
-    cdef int send(self, char *topic, void *data, size_t size, bint no_copy)  nogil
+    cdef int send(self, char *topic, void *data, size_t size, int no_copy)  nogil
     cdef int _send_set_error(self, int err_code, void * data) nogil
 
     cdef void * receive(self, size_t *size) nogil

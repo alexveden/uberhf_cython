@@ -66,7 +66,7 @@ cdef class ProtocolBase:
         if cstate == NULL:
             # Now initialized state!
             state = <ConnectionState *> malloc(sizeof(ConnectionState))
-            strlcpy(state.sender_id, sender_id, TRANSPORT_SENDER_SIZE + 1)
+            strlcpy(state.sender_id, sender_id, TRANSPORT_SENDER_SIZE)
             state.status = ProtocolStatus.UHF_INACTIVE
             state.server_life_id = self.server_life_id
             state.client_life_id = self.client_life_id

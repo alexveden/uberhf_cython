@@ -161,7 +161,10 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         # These reserved for server reply
         msg_out.error_code = 0
         msg_out.instrument_index = -1
-        return self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=True)
+        return self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=1)
+
+    cdef int send_new_quote(self, ProtocolDSQuoteMessage* qmsg, int send_no_copy) nogil:
+        pass
 
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil:
         """

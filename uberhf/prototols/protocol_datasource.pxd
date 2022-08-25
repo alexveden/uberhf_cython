@@ -6,6 +6,7 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.prototols.protocol_base cimport ProtocolBase, ConnectionState
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
+from uberhf.datafeed.uhffeed cimport Quote
 
 
 
@@ -15,6 +16,13 @@ ctypedef struct ProtocolDSRegisterMessage:
     uint64_t instrument_id
     int error_code
     int instrument_index
+
+ctypedef struct ProtocolDSQuoteMessage:
+    TransportHeader header
+    uint64_t instrument_id
+    int instrument_index
+    bint is_snapshot
+    Quote quote
 
 
 cdef class ProtocolDataSourceBase(ProtocolBase):
@@ -27,5 +35,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
 
     cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id) nogil
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil
+
+    cdef int send_new_quote(self, ProtocolDSQuoteMessage * qmsg, int send_no_copy) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil

@@ -5,6 +5,7 @@ import zmq
 from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
+from uberhf.includes.utils cimport sleep_ns
 from libc.stdint cimport uint64_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy
 from libc.stdlib cimport malloc, free
@@ -28,12 +29,14 @@ class CyTransportTestCase(unittest.TestCase):
         with zmq.Context() as ctx:
             transport = Transport(<uint64_t> ctx.underlying, URL_CONNECT , ZMQ_DEALER, b'CLIEN')
             try:
-                assert TRANSPORT_SENDER_SIZE == 5, 'Max sender size'
+                assert TRANSPORT_SENDER_SIZE == 6, 'Max sender size'
                 assert transport.socket != NULL, 'Socket must be initialized'
                 assert transport.last_error == 0, 'last error 0'
                 assert transport.context != NULL, f'context must be stored'
                 assert transport.transport_id_len == 5, 'transport.transport_id_len == 5'
-                assert memcmp(transport.transport_id, b'CLIEN', 5) == 0, 'transport.transport_id no match'
+                assert memcmp(transport.transport_id, b'CLIEN', TRANSPORT_SENDER_SIZE) == 0, 'transport.transport_id no match'
+                assert memcmp(transport.transport_id, b'CLIEN\0', TRANSPORT_SENDER_SIZE) == 0, 'transport.transport_id no match'
+                assert strcmp(transport.transport_id, b'CLIEN') == 0, 'transport.transport_id no match'
                 assert transport.socket_type == ZMQ_DEALER
 
                 socket = zmq.Socket.shadow(<uint64_t>transport.socket)
@@ -41,7 +44,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert len(socket_routing_id) == 5, f'ZMQ_ROUTING_ID length'
                 assert socket_routing_id == b'CLIEN'
                 assert transport.last_error == 0
-
+            except:
+                raise
             finally:
                 transport.close()
                 assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
@@ -53,7 +57,7 @@ class CyTransportTestCase(unittest.TestCase):
         with zmq.Context() as ctx:
             transport = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'C')
             try:
-                assert TRANSPORT_SENDER_SIZE == 5, 'Max sender size'
+                assert TRANSPORT_SENDER_SIZE == 6, 'Max sender size'
                 assert transport.socket != NULL, 'Socket must be initialized'
                 assert transport.last_error == 0, 'last error 0'
                 assert transport.context != NULL, f'context must be stored'
@@ -65,6 +69,8 @@ class CyTransportTestCase(unittest.TestCase):
                 socket_routing_id = socket.get(zmq.ROUTING_ID)
                 assert len(socket_routing_id) == 0, f'ZMQ_ROUTING_ID length'
                 assert transport.last_error == 0
+            except:
+                raise
             finally:
                 transport.close()
                 assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
@@ -102,7 +108,8 @@ class CyTransportTestCase(unittest.TestCase):
                 transport_s.receive_finalize(pmsg)
                 assert transport_s.last_msg_received_ptr == NULL
                 assert transport_s.last_data_received_ptr == NULL
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -153,7 +160,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg != NULL
                 assert pmsg.data == 778
                 transport_c.receive_finalize(pmsg)
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -178,7 +186,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert result == TRANSPORT_ERR_NULL_DATA
                 assert transport_c.get_last_error() == TRANSPORT_ERR_NULL_DATA
                 assert transport_c.get_last_error_str(result) == b"Data is NULL"
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -203,7 +212,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert result == TRANSPORT_ERR_BAD_SIZE
                 assert transport_c.get_last_error() == TRANSPORT_ERR_BAD_SIZE
                 assert transport_c.get_last_error_str(result) == b'Transport data size has less than TransportHeader size'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -234,7 +244,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg == NULL
                 assert transport_s.get_last_error() == TRANSPORT_ERR_BAD_HEADER
                 assert transport_s.get_last_error_str(TRANSPORT_ERR_BAD_HEADER) == b'Transport invalid header signature'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -262,7 +273,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg == NULL
                 assert transport_s.get_last_error() == TRANSPORT_ERR_BAD_SIZE
                 assert transport_s.get_last_error_str(TRANSPORT_ERR_BAD_SIZE) == b'Transport data size has less than TransportHeader size'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -290,7 +302,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg == NULL
                 assert transport_s.get_last_error() == TRANSPORT_ERR_BAD_PARTSCOUNT
                 assert transport_s.get_last_error_str(TRANSPORT_ERR_BAD_PARTSCOUNT) == b'Transport unexpected multipart count'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -338,7 +351,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg == NULL
                 assert transport_c.get_last_error() == TRANSPORT_ERR_BAD_PARTSCOUNT, transport_c.get_last_error()
                 assert transport_c.get_last_error_str(TRANSPORT_ERR_BAD_PARTSCOUNT) == b'Transport unexpected multipart count'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -367,7 +381,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg == NULL
                 assert transport_s.get_last_error() == TRANSPORT_ERR_SOCKET_CLOSED
                 assert transport_s.get_last_error_str(TRANSPORT_ERR_SOCKET_CLOSED) == b'Socket already closed'
-
+            except:
+                raise
             finally:
                 #transport_s.close()
                 transport_c.close()
@@ -396,7 +411,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert result == TRANSPORT_ERR_SOCKET_CLOSED
                 assert transport_c.get_last_error() == TRANSPORT_ERR_SOCKET_CLOSED
                 assert transport_c.get_last_error_str(TRANSPORT_ERR_SOCKET_CLOSED) == b'Socket already closed'
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 #transport_c.close()
@@ -406,7 +422,6 @@ class CyTransportTestCase(unittest.TestCase):
         """
         THIS TEST MAKES COVERAGE CORE DUMP (because _zmq_free_data_callback function called outside of GIL)!
         """
-
         cdef char buffer[255]
         cdef size_t buffer_size
 
@@ -417,9 +432,12 @@ class CyTransportTestCase(unittest.TestCase):
         with zmq.Context() as ctx:
             transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
             transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
+
             try:
+                assert zmq_free_count == 0
                 msg1.data = 777
-                transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=True)
+                assert transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=True) > 0
                 assert transport_c.msg_sent == 1
                 assert transport_c.msg_received == 0
                 assert transport_c.msg_errors == 0
@@ -427,7 +445,8 @@ class CyTransportTestCase(unittest.TestCase):
                 #
                 # Server received
                 pmsg = <TestGenericMessage*>transport_s.receive(&buffer_size)
-
+                if pmsg == NULL:
+                    assert transport_s.get_last_error() == 0, transport_s.get_last_error_str(transport_s.get_last_error())
                 assert pmsg != NULL
                 assert transport_s.msg_errors == 0
                 assert transport_s.msg_sent == 0
@@ -453,35 +472,30 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg != NULL
                 assert pmsg.data == 778
                 transport_c.receive_finalize(pmsg)
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
 
+        assert zmq_free_count == 2, int(zmq_free_count)
 
-    def test_simple_server_response__no_copy_invalid(self):
-        """
-        This test for manual handling of weird
-        :return:
-        """
-
-        # Just for manual testing, this code will always raise casserts
-        return
-
-
+    def test_simple_server_response__no_copy_no_free(self):
         cdef char buffer[255]
         cdef size_t buffer_size
 
-        cdef TestGenericMessage * msg1  = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
-        cdef TestGenericMessage * msg2
+        cdef TestGenericMessage * msg1 =<TestGenericMessage *> malloc(sizeof(TestGenericMessage))
+        cdef TestGenericMessage * msg2 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
             transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
             transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
             try:
+                assert zmq_free_count == 0
                 msg1.data = 777
-                transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=True)
+                assert transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=-1) > 0
                 assert transport_c.msg_sent == 1
                 assert transport_c.msg_received == 0
                 assert transport_c.msg_errors == 0
@@ -489,15 +503,16 @@ class CyTransportTestCase(unittest.TestCase):
                 #
                 # Server received
                 pmsg = <TestGenericMessage*>transport_s.receive(&buffer_size)
-
+                if pmsg == NULL:
+                    assert transport_s.get_last_error() == 0, transport_s.get_last_error_str(transport_s.get_last_error())
                 assert pmsg != NULL
                 assert transport_s.msg_errors == 0
                 assert transport_s.msg_sent == 0
                 assert transport_s.msg_received == 1
 
                 # server reply
-                pmsg.data += 1
-                res = transport_s.send(pmsg.header.sender_id, pmsg, sizeof(TestGenericMessage), no_copy=True)
+                msg2.data = pmsg.data + 1
+                res = transport_s.send(pmsg.header.sender_id, msg2, sizeof(TestGenericMessage), no_copy=-1)
                 transport_s.receive_finalize(pmsg)
                 assert transport_s.msg_received == 1
                 assert transport_s.msg_errors == 0
@@ -515,10 +530,51 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg != NULL
                 assert pmsg.data == 778
                 transport_c.receive_finalize(pmsg)
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
+
+        assert zmq_free_count == 0, int(zmq_free_count)
+        free(msg1)
+        free(msg2)
+
+    def test_simple_server_response__no_copy_invalid(self):
+        """
+        This test for manual handling of weird
+        :return:
+        """
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage * msg1
+        cdef TestGenericMessage * msg2
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            try:
+                assert zmq_free_count == 0
+                msg1 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
+                msg1.data = 777
+                assert transport_c.send(NULL, msg1, sizeof(TransportHeader)-1, no_copy=True) < 0
+                assert transport_c.msg_sent == 0
+                assert transport_c.msg_received == 0
+                assert transport_c.msg_errors == 1
+
+                msg1 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
+                assert transport_c.send(NULL, msg1, 0, no_copy=True) < 0
+                assert transport_c.msg_sent == 0
+                assert transport_c.msg_received == 0
+                assert transport_c.msg_errors == 2
+
+            except:
+                raise
+            finally:
+                transport_c.close()
+
+        assert zmq_free_count == 2, zmq_free_count
 
 
     def test_simple_client_request_no_server(self):
@@ -547,7 +603,8 @@ class CyTransportTestCase(unittest.TestCase):
                 # Error codes returned from ZMQ space
                 assert transport_c.get_last_error() == zmq_errno()
                 assert transport_c.get_last_error_str(transport_c.get_last_error()) == zmq_strerror(zmq_errno()), zmq_strerror(zmq_errno())
-
+            except:
+                raise
             finally:
                 transport_c.close()
 
@@ -578,6 +635,8 @@ class CyTransportTestCase(unittest.TestCase):
                     assert rc == 0
                     # We must deal with timeouts on protocol levels!
                     break
+            except:
+                raise
             finally:
                 transport_c.close()
 
@@ -628,7 +687,8 @@ class CyTransportTestCase(unittest.TestCase):
                 #
                 # # Finalizing the message
                 transport_c2.receive_finalize(pmsg)
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -674,7 +734,8 @@ class CyTransportTestCase(unittest.TestCase):
                 pmsg = <TestGenericMessage*>transport_c2.receive(&buffer_size)
                 assert pmsg == NULL
                 assert transport_c2.last_error == TRANSPORT_ERR_ZMQ
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -721,7 +782,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg != NULL
                 assert pmsg.data == 888
                 transport_c2.receive_finalize(pmsg)
-
+            except:
+                raise
             finally:
                 transport_s.close()
                 transport_c.close()
@@ -748,7 +810,8 @@ class CyTransportTestCase(unittest.TestCase):
                 assert result == TRANSPORT_ERR_ZMQ
                 assert transport_s.get_last_error() == 113, transport_s.get_last_error()
                 assert transport_s.get_last_error_str(transport_s.get_last_error()) ==  b'Host unreachable'
-
+            except:
+                raise
             finally:
                 transport_s.close()
 
@@ -771,6 +834,7 @@ class CyTransportTestCase(unittest.TestCase):
                 assert result == TRANSPORT_ERR_NULL_DEALERID
                 assert transport_s.get_last_error() == TRANSPORT_ERR_NULL_DEALERID
                 assert transport_s.get_last_error_str(TRANSPORT_ERR_NULL_DEALERID) == b"Dealer ID is mandatory for ZMQ_ROUTER.send()"
-
+            except:
+                raise
             finally:
                 transport_s.close()
