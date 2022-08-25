@@ -56,9 +56,9 @@ cdef class ProtocolBase:
     #
     # Methods for child classes
     #
+    cdef void initialize_client(self, ConnectionState * cstate) nogil
+    cdef void activate_client(self, ConnectionState * cstate) nogil
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
-    cdef int initialize_client(self, ConnectionState * cstate) nogil
-    cdef int activate_client(self, ConnectionState * cstate) nogil
 
     #
     # Private methods

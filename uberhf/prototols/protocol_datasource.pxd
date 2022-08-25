@@ -21,9 +21,9 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     cdef DatasourceAbstract source_client
     cdef UHFeedAbstract feed_server
 
+    cdef void initialize_client(self, ConnectionState * cstate) nogil
+    cdef void activate_client(self, ConnectionState * cstate) nogil
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
-    cdef int initialize_client(self, ConnectionState * cstate) nogil
-    cdef int activate_client(self, ConnectionState * cstate) nogil
 
     cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id) nogil
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil

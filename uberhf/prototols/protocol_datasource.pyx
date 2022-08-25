@@ -14,7 +14,7 @@ from uberhf.prototols.protocol_base cimport ProtocolBase
 # Set child protocol message types in lower case to avoid conflicts with BaseProtocol
 DEF MSGT_REGISTER = b'r'
 DEF MSGT_QUOTE = b'q'
-DEF MSGT_IINFO = b'o'
+DEF MSGT_IINFO = b'i'
 
 
 cdef class ProtocolDataSourceBase(ProtocolBase):
@@ -29,31 +29,17 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         if source_client is not None:
             is_server = 0
             self.source_client = source_client
+            self.source_client.register_datasource_protocol(self)
         elif feed_server is not None:
             is_server = 1
             self.feed_server = feed_server
+            self.feed_server.register_datasource_protocol(self)
 
         # Calling super() class in Cython must be by static
         ProtocolBase.protocol_initialize(self, PROTOCOL_ID_DATASOURCE, is_server, module_id, transport, heartbeat_interval_sec)
 
-    cdef void disconnect_client(self, ConnectionState * cstate) nogil:
-        """
-        Set internal connection state as disconnected, this method should also be overridden by child classes for additional logic
 
-        This is client/server method!     
-
-        :param cstate: 
-        :return: 
-        """
-        # Calling super() method is mandatory!
-        ProtocolBase.disconnect_client(self, cstate)
-
-        if self.is_server:
-            self.feed_server.source_on_disconnect(cstate)
-        else:
-            self.source_client.source_on_disconnect()
-
-    cdef int initialize_client(self, ConnectionState * cstate) nogil:
+    cdef void initialize_client(self, ConnectionState * cstate) nogil:
         """
         Initialization of the new connection
 
@@ -70,17 +56,94 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         # super() method just only does - self.send_activate()
         #return ProtocolBase.initialize_client(self, cstate)
         if self.is_server:
-            return self.feed_server.source_on_initialize(cstate)
+            self.feed_server.source_on_initialize(cstate.sender_id)
         else:
-            return self.source_client.source_on_initialize()
+            self.source_client.source_on_initialize()
 
+    cdef void activate_client(self, ConnectionState * cstate) nogil:
+        """
+        Activation of the initialized connection
+
+         - server gets this command when the client requests: send_activate()
+         - client gets this command when the server reply on_activate()
+
+        So server can set its internal state of the client, and the protocol goes into active state
+
+        This is client/server method!     
+
+        :param cstate: 
+        :return: 
+        """
+        if self.is_server:
+            self.feed_server.source_on_activate(cstate.sender_id)
+        else:
+            self.source_client.source_on_activate()
+
+    cdef void disconnect_client(self, ConnectionState * cstate) nogil:
+        """
+        Set internal connection state as disconnected, this method should also be overridden by child classes for additional logic
+
+        This is client/server method!     
+
+        :param cstate: 
+        :return: 
+        """
+        # Calling super() method is mandatory!
+        ProtocolBase.disconnect_client(self, cstate)
+
+        if self.is_server:
+            self.feed_server.source_on_disconnect(cstate.sender_id)
+        else:
+            self.source_client.source_on_disconnect()
+
+    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
+        """
+        Client / server dispatcher of datasource messages
+
+        :param msg: 
+        :param msg_size: 
+        :return: 
+        """
+        cdef TransportHeader * hdr = <TransportHeader *> msg
+        cdef int rc = 0
+
+        if hdr.protocol_id != self.protocol_id:
+            # Protocol doesn't match
+            return rc
+
+        # In order from the most frequent to less frequent
+        # if hdr.msg_type == MSGT_QUOTE:
+        #     cyassert(0)
+        # elif hdr.msg_type == MSGT_IINFO:
+        #     cyassert(0)
+        if hdr.msg_type == MSGT_REGISTER:
+            # Source initialization request/reply
+            if msg_size != sizeof(ProtocolDSRegisterMessage):
+                return PROTOCOL_ERR_SIZE
+            rc = self.on_register_instrument(<ProtocolDSRegisterMessage *> msg)
+            cyassert(rc != 0)
+        else:
+            rc = ProtocolBase.on_process_new_message(self, msg, msg_size)
+            cyassert(rc != 0)
+
+        return rc
+
+    #
+    #  PROTOCOL SPECIFIC METHODS
+    #
     cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id) nogil:
+        """
+        Data source client send registration request for all v2 tickers it's going to source
+        
+        :param v2_ticker: full qualified v2 ticker  
+        :param instrument_id: unique ticker ID for this source
+        :return: >0 if success, or error
+        """
         cyassert( self.is_server == 0) # Only clients allowed
 
         cdef ConnectionState * cstate = self.get_state(b'')
 
         if cstate.status != ProtocolStatus.UHF_INITIALIZING:
-            cyassert(cstate.status == ProtocolStatus.UHF_INITIALIZING)
             return PROTOCOL_ERR_WRONG_ORDER
         if strlen(v2_ticker) > V2_TICKER_MAX_LEN-1:
             return PROTOCOL_ERR_ARG_ERR
@@ -97,11 +160,16 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         msg_out.instrument_id = instrument_id
         # These reserved for server reply
         msg_out.error_code = 0
-        msg_out.instrument_index = 0
-        self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=True)
-
+        msg_out.instrument_index = -1
+        return self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=True)
 
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil:
+        """
+        Client / server handler of new registration requests
+        
+        :param msg: 
+        :return: 
+        """
         cdef int rc = 0
         cdef ProtocolDSRegisterMessage *msg_out
 
@@ -129,48 +197,14 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
             return self.transport.send(msg.header.sender_id, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=True)
         else:
             # Processing confirmation from the server
-            return self.source_client.source_on_register_instrument(msg.v2_ticker, msg.instrument_id, msg.error_code, msg.instrument_index)
+            rc = self.source_client.source_on_register_instrument(msg.v2_ticker, msg.instrument_id, msg.error_code, msg.instrument_index)
+            if rc <= 0:
+                # Force returning error even if client returns 0, to not confuse on_process_new_message()
+                return PROTOCOL_ERR_CLI_ERR
+            else:
+                return rc
 
-    cdef int activate_client(self, ConnectionState * cstate) nogil:
-        """
-        Activation of the initialized connection
 
-         - server gets this command when the client requests: send_activate()
-         - client gets this command when the server reply on_activate()
-
-        So server can set its internal state of the client, and the protocol goes into active state
-
-        This is client/server method!     
-
-        :param cstate: 
-        :return: 
-        """
-        return 1
-
-    cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil:
-        cdef TransportHeader * hdr = <TransportHeader *> msg
-        cdef int rc = 0
-
-        if hdr.protocol_id != self.protocol_id:
-            # Protocol doesn't match
-            return rc
-
-        # In order from the most frequent to less frequent
-        if hdr.msg_type == MSGT_QUOTE:
-            cyassert(0)
-        elif hdr.msg_type == MSGT_IINFO:
-            cyassert(0)
-        elif hdr.msg_type == MSGT_REGISTER:
-            # Source initialization request/reply
-            if msg_size != sizeof(ProtocolDSRegisterMessage):
-                return PROTOCOL_ERR_SIZE
-            rc = self.on_register_instrument(<ProtocolDSRegisterMessage*>msg)
-            cyassert(rc != 0)
-        else:
-            rc = ProtocolBase.on_process_new_message(self, msg, msg_size)
-            cyassert(rc != 0)
-
-        return rc
 
 
 

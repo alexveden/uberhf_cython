@@ -14,6 +14,7 @@ DEF MSGT_ACTIVATE = b'A'
 DEF MSGT_DISCONNECT = b'D'
 DEF MSGT_HEARTBEAT = b'H'
 
+
 cdef class ProtocolBase:
     # Skipping __cinit__ - to allow child classes to have arbitrary constructor arguments!
     #def __cinit__(self, is_server, module_id, transport, heartbeat_interval_sec=5):
@@ -188,9 +189,8 @@ cdef class ProtocolBase:
 
         cdef int rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_INITIALIZING, 1, MSGT_INITIALIZE)
         if rc > 0:
-            return self.initialize_client(cstate)
-        else:
-            return rc
+            self.initialize_client(cstate)
+        return rc
 
     cdef int on_activate(self, ProtocolBaseMessage * msg) nogil:
         """
@@ -209,9 +209,8 @@ cdef class ProtocolBase:
 
         cdef int rc = self._on_msg_reply(cstate, msg, ProtocolStatus.UHF_ACTIVE, 1, MSGT_ACTIVATE)
         if rc > 0:
-            return self.activate_client(cstate)
-        else:
-            return rc
+            self.activate_client(cstate)
+        return rc
 
     cdef int on_disconnect(self, ProtocolBaseMessage * msg) nogil:
         """
@@ -290,8 +289,10 @@ cdef class ProtocolBase:
             return rc
         else:
             return PROTOCOL_ERR_WRONG_TYPE
-
-    cdef int initialize_client(self, ConnectionState * cstate) nogil:
+    #
+    # Prototype methods for overriding in child protocol classes
+    #
+    cdef void initialize_client(self, ConnectionState * cstate) nogil:
         """
         Initialization of the new connection
         
@@ -307,12 +308,12 @@ cdef class ProtocolBase:
         """
         if self.is_server:
             # Just confirms client initialization
-            return 1
+            return
         else:
             # By default let's send activate command
-            return self.send_activate()
+            self.send_activate()
 
-    cdef int activate_client(self, ConnectionState * cstate) nogil:
+    cdef void activate_client(self, ConnectionState * cstate) nogil:
         """
         Activation of the initialized connection
         
@@ -326,7 +327,7 @@ cdef class ProtocolBase:
         :param cstate: 
         :return: 
         """
-        return 1
+        return
 
     cdef void disconnect_client(self, ConnectionState * cstate) nogil:
         """
