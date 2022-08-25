@@ -2,16 +2,6 @@ from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 from libc.stdint cimport uint16_t
 
-
-ctypedef struct TransportHeader:
-    uint16_t magic_number
-    char sender_id[TRANSPORT_SENDER_SIZE]
-    char protocol_id
-    char msg_type
-    unsigned int server_life_id
-    unsigned int client_life_id
-
-
 cdef size_t zmq_free_count = 0
 
 cdef class Transport:

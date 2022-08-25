@@ -1,12 +1,14 @@
 from uberhf.includes.uhfprotocols cimport ProtocolStatus, TRANSPORT_SENDER_SIZE, PROTOCOL_ID_BASE, PROTOCOL_ERR_WRONG_ORDER, \
-                                          PROTOCOL_ERR_LIFE_ID, PROTOCOL_ERR_WRONG_TYPE, PROTOCOL_ERR_CLI_TIMEO, PROTOCOL_ERR_SRV_TIMEO
-from .transport cimport Transport, TransportHeader
+                                          PROTOCOL_ERR_LIFE_ID, PROTOCOL_ERR_WRONG_TYPE, PROTOCOL_ERR_CLI_TIMEO, PROTOCOL_ERR_SRV_TIMEO, \
+                                          TRANSPORT_HDR_MGC
+from .transport cimport Transport
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from libc.stdlib cimport malloc, free
 from libc.string cimport strlen
 from uberhf.includes.hashmap cimport HashMap
 from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id, timedelta_ns, TIMEDELTA_SEC
 from uberhf.prototols.libzmq cimport *
+
 
 DEF MSGT_CONNECT = b'C'
 DEF MSGT_INITIALIZE = b'I'

@@ -3,12 +3,13 @@ from libc.string cimport memcpy, strlen, memset, strncpy
 from uberhf.prototols.libzmq cimport *
 from zmq.error import ZMQError
 from libc.stdint cimport uint64_t
-from .transport cimport Transport, TransportHeader
-from uberhf.includes.uhfprotocols cimport PROTOCOL_ID_DATASOURCE, ProtocolStatus, PROTOCOL_ERR_WRONG_ORDER, PROTOCOL_ERR_ARG_ERR
+from .transport cimport Transport
+from uberhf.includes.uhfprotocols cimport PROTOCOL_ID_DATASOURCE, ProtocolStatus, PROTOCOL_ERR_WRONG_ORDER, PROTOCOL_ERR_ARG_ERR, PROTOCOL_ERR_SRV_ERR
 from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE
 from uberhf.prototols.protocol_base cimport ProtocolBase
+from uberhf.prototols.messages cimport TransportHeader, ProtocolDSRegisterMessage, ProtocolDSQuoteMessage
 
 
 # Set child protocol message types in lower case to avoid conflicts with BaseProtocol
@@ -145,7 +146,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
 
         if cstate.status != ProtocolStatus.UHF_INITIALIZING:
             return PROTOCOL_ERR_WRONG_ORDER
-        if strlen(v2_ticker) > V2_TICKER_MAX_LEN-1:
+        if v2_ticker == NULL or strlen(v2_ticker) > V2_TICKER_MAX_LEN-1:
             return PROTOCOL_ERR_ARG_ERR
         if instrument_id == 0:
             return PROTOCOL_ERR_ARG_ERR
@@ -163,8 +164,29 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         msg_out.instrument_index = -1
         return self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=1)
 
-    cdef int send_new_quote(self, ProtocolDSQuoteMessage* qmsg, int send_no_copy) nogil:
-        pass
+    cdef int send_new_quote(self, ProtocolDSQuoteMessage* msg, int send_no_copy) nogil:
+        """
+        Data source sends new quotes to the UHFeed server
+        
+        :param msg: 
+        :param send_no_copy: 
+        :return: 
+        """
+        cyassert(self.is_server == 0)  # Only clients allowed
+        cyassert(msg != NULL)
+        cyassert(msg.header.msg_type == MSGT_QUOTE)
+
+        return self.transport.send(NULL, msg, sizeof(ProtocolDSRegisterMessage), no_copy=send_no_copy)
+
+    cdef int on_new_quote(self, ProtocolDSQuoteMessage * msg) nogil:
+        cyassert(self.is_server == 1) # Only servers allowed
+        cyassert(msg != NULL)
+
+        cdef int rc = self.feed_server.source_on_quote(msg)
+        if rc > 0:
+            return 1
+        else:
+            return PROTOCOL_ERR_SRV_ERR
 
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil:
         """
@@ -173,6 +195,8 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         :param msg: 
         :return: 
         """
+        cyassert(msg != NULL)
+
         cdef int rc = 0
         cdef ProtocolDSRegisterMessage *msg_out
 

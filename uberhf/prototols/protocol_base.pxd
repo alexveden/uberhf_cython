@@ -1,6 +1,8 @@
 from uberhf.includes.uhfprotocols cimport ProtocolStatus, TRANSPORT_SENDER_SIZE
-from .transport cimport Transport, TransportHeader
+from .transport cimport Transport
 from uberhf.includes.hashmap cimport HashMap
+from .messages cimport ProtocolBaseMessage
+
 
 ctypedef struct ConnectionState:
     # Keep sender_id as first item to allow HashMap seek by string
@@ -13,11 +15,6 @@ ctypedef struct ConnectionState:
     size_t msg_recvd
     size_t msg_errs
     size_t n_heartbeats
-
-
-ctypedef struct ProtocolBaseMessage:
-    TransportHeader header
-    ProtocolStatus status
 
 
 cdef class ProtocolBase:

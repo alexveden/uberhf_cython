@@ -7,6 +7,7 @@ from uberhf.includes.asserts cimport cyassert
 from uberhf.includes.uhfprotocols cimport *
 from zmq.error import ZMQError
 from libc.stdint cimport uint64_t
+from uberhf.prototols.messages cimport TransportHeader
 
 # It's only for testing purposes to make sure if ZMQ correctly frees memory
 from .transport cimport zmq_free_count
@@ -184,7 +185,10 @@ cdef class Transport:
                                 For PUB/SUB transports this field used as topic
         :param data: data structure, must include space for TransportHeader (at the beginning) + some useful data for protocol
         :param size: data size
-        :param no_copy: 0 - data is copied, 1 - data not copied but freed later, -1 - data not copied and NOT freed (useful for long standing buffers!) 
+        :param no_copy: 
+            0 - data is fully copied, 
+            1 - data not copied, headers are also filled, data will be freed later, 
+           -1 - data not copied and NOT freed (useful for **long standing buffers**!), manual headers and sender_id fill required (sent as is!) 
         :return: number of bytes sent to the socket
         """
         self.last_error = TRANSPORT_ERR_OK
@@ -209,17 +213,21 @@ cdef class Transport:
             if rc == -1:
                 return self._send_set_error(TRANSPORT_ERR_ZMQ, data if no_copy else NULL)
 
-
         cdef zmq_msg_t msg
         cdef TransportHeader* hdr = <TransportHeader*>data
-        hdr.magic_number = TRANSPORT_HDR_MGC
-        strlcpy(hdr.sender_id, self.transport_id, TRANSPORT_SENDER_SIZE)
+
+        if no_copy != -1:
+            hdr.magic_number = TRANSPORT_HDR_MGC
+            strlcpy(hdr.sender_id, self.transport_id, TRANSPORT_SENDER_SIZE)
+        else:
+            cyassert(hdr.magic_number == TRANSPORT_HDR_MGC)  # You must fully initialize headers in user code!
 
         if no_copy and not self.always_send_copy:
-            if data == self.last_data_received_ptr:
-                # Trying to change data inplace, this is DEFINITELY dangerous
-                cyassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
+            # Trying to change data inplace, this is DEFINITELY dangerous
+            cyassert(data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
+
             if no_copy == 1:
+
                 rc = zmq_msg_init_data (&msg, data, size, <zmq_free_fn*>_zmq_free_data_callback, NULL)
             else:
                 cyassert(no_copy == -1)

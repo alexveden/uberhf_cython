@@ -1,5 +1,7 @@
 from libc.stdint cimport uint64_t
 from uberhf.includes.asserts cimport cyassert
+from uberhf.prototols.messages cimport ProtocolDSQuoteMessage
+
 
 cdef class UHFeedAbstract:
     """
@@ -30,6 +32,13 @@ cdef class UHFeedAbstract:
         return
 
     cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id) nogil:
+        """
+        Source sends initialization data
+        :return: 
+        """
+        return -1
+
+    cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
         """
         Source sends initialization data
         :return: 

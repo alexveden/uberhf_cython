@@ -5,10 +5,12 @@ import zmq
 from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
-from uberhf.includes.utils cimport sleep_ns
+from uberhf.includes.utils cimport strlcpy
 from libc.stdint cimport uint64_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy
 from libc.stdlib cimport malloc, free
+from uberhf.prototols.messages cimport *
+from uberhf.includes.asserts cimport cybreakpoint
 
 import os
 import pytest
@@ -494,6 +496,8 @@ class CyTransportTestCase(unittest.TestCase):
 
             try:
                 assert zmq_free_count == 0
+                msg1.header.magic_number = TRANSPORT_HDR_MGC
+                strlcpy(msg1.header.sender_id, transport_c.transport_id, TRANSPORT_SENDER_SIZE)
                 msg1.data = 777
                 assert transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=-1) > 0
                 assert transport_c.msg_sent == 1
@@ -509,11 +513,22 @@ class CyTransportTestCase(unittest.TestCase):
                 assert transport_s.msg_errors == 0
                 assert transport_s.msg_sent == 0
                 assert transport_s.msg_received == 1
+                assert pmsg.data == 777
+
 
                 # server reply
-                msg2.data = pmsg.data + 1
+                msg2.header.magic_number = TRANSPORT_HDR_MGC
+                strlcpy(msg2.header.sender_id, transport_s.transport_id, TRANSPORT_SENDER_SIZE)
+                #cybreakpoint(1)
+                assert strcmp(pmsg.header.sender_id, transport_c.transport_id) == 0
+                msg2.data = 888
                 res = transport_s.send(pmsg.header.sender_id, msg2, sizeof(TestGenericMessage), no_copy=-1)
+                assert res > 0, int(res)
                 transport_s.receive_finalize(pmsg)
+                if res <= 0:
+                    assert transport_s.get_last_error() == 0, transport_s.get_last_error_str(transport_s.get_last_error())
+
+
                 assert transport_s.msg_received == 1
                 assert transport_s.msg_errors == 0
                 assert transport_s.msg_sent == 1
@@ -528,11 +543,18 @@ class CyTransportTestCase(unittest.TestCase):
                 assert transport_c.msg_errors == 0
 
                 assert pmsg != NULL
-                assert pmsg.data == 778
+                assert pmsg.data == 888
                 transport_c.receive_finalize(pmsg)
             except:
                 raise
             finally:
+                if transport_c.last_data_received_ptr != NULL:
+                    transport_c.receive_finalize(transport_c.last_data_received_ptr)
+
+                if transport_s.last_data_received_ptr != NULL:
+                    transport_s.receive_finalize(transport_s.last_data_received_ptr)
+
+
                 transport_s.close()
                 transport_c.close()
 
