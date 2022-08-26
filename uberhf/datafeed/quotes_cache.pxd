@@ -5,6 +5,7 @@ from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE, V2_TICKER_MAX_L
 from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
 
 
+
 ctypedef struct QCHeader:
     uint16_t magic_number
     unsigned int uhffeed_life_id
@@ -43,6 +44,8 @@ ctypedef struct Name2Idx:
 
 cdef class SharedQuotesCache:
     cdef bint is_server
+    cdef int lock_fd
+    cdef bint lock_acquired
     cdef void * mmap_data
     cdef size_t mmap_size
     cdef unsigned int uhffeed_life_id

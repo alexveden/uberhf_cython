@@ -95,4 +95,5 @@ cpdef main():
         free(all_tickers[i])
     free(all_tickers)
 
-
+    print('Sleeping 30 sec')
+    time.sleep(30)

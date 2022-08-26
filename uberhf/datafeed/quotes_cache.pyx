@@ -12,9 +12,13 @@ from uberhf.includes.hashmap cimport HashMap
 from uberhf.includes.utils cimport strlcpy
 from libc.math cimport NAN, HUGE_VAL
 from libc.limits cimport LONG_MAX
-
+import fcntl
+import os
+from multiprocessing import Lock
 
 DEF SHARED_FN = b'/uhfeed_shared_cache'
+
+lock = Lock()
 
 cdef class SharedQuotesCache:
 
@@ -24,14 +28,32 @@ cdef class SharedQuotesCache:
         self.is_server = uhffeed_life_id != 0
         self.mmap_data = NULL
 
-        assert source_capacity > 0
-        assert quotes_capacity > 0
+
 
         cdef int sh_fn_access = 0
         if self.is_server:
+            if not lock.acquire(block=False):
+                # Locking for multiple instances of the server mode
+                raise RuntimeError(f'Trying to launch multiple SharedQuotesCache class instances')
+
+            # Locking for multiple processes
+            self.lock_acquired = 1
+            self.lock_fd = os.open(f"/tmp/instance_uhfeed_core.lock", os.O_WRONLY | os.O_CREAT)
+            try:
+                fcntl.lockf(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except IOError:
+                raise RuntimeError(f'Trying to launch multiple SharedQuotesCache server processes')
+
+            assert source_capacity > 0
+            assert quotes_capacity > 0
+
             sh_fn_access = O_CREAT | O_RDWR
         else:
-            cybreakpoint(1)
+            assert source_capacity == 0, 'Client must always set source_capacity to 0'
+            assert quotes_capacity == 0, 'Client must always set quote_capacity to 0'
+            sh_fn_access = O_RDONLY
+            self.lock_acquired = 0 # Client don't hold locks
+            self.lock_fd = -1
 
         cdef int _fd = shm_open(SHARED_FN, sh_fn_access, S_IRWXU)
 
@@ -51,9 +73,7 @@ cdef class SharedQuotesCache:
             ftruncate(_fd, shmem_size)
             is_new_file = True
         else:
-            # TODO: implement re-initialization when file exists
-            shm_unlink(SHARED_FN)
-            assert False, f'{SHARED_FN} exists, now it was removed, please restart'
+            shmem_size = statbuf.st_size
 
         if self.is_server:
             self.mmap_data = mmap(NULL, shmem_size, PROT_WRITE | PROT_READ, MAP_SHARED, _fd, 0)
@@ -67,7 +87,9 @@ cdef class SharedQuotesCache:
                 # Zero memory if the file is new to avoid junk data
                 memset(self.mmap_data, 0, self.mmap_size)
         else:
-            cybreakpoint(1)
+            self.mmap_data = mmap(NULL, shmem_size, PROT_READ, MAP_SHARED, _fd, 0)
+            self.mmap_size = shmem_size
+
 
         # man mmap: After the mmap() call has returned, the file descriptor, fd, can be closed immediately without invalidating the mapping.
         close(_fd)
@@ -76,11 +98,11 @@ cdef class SharedQuotesCache:
         # Initializing the headers
         #
         self.header = <QCHeader*>self.mmap_data
-        self.sources = <QCSourceHeader*>(self.mmap_data + sizeof(QCHeader))
-        self.records = <QCRecord*> (self.mmap_data + sizeof(QCHeader) + source_capacity*sizeof(QCSourceHeader))
 
-        self.source_map = HashMap(sizeof(Name2Idx), source_capacity)
-        self.ticker_map = HashMap(sizeof(Name2Idx), quotes_capacity)
+
+        cdef Name2Idx nidx
+        cdef QCSourceHeader* src_h
+        cdef QCRecord * q
 
         if self.is_server:
             self.header.uhffeed_life_id = uhffeed_life_id
@@ -90,13 +112,52 @@ cdef class SharedQuotesCache:
                 self.header.quote_capacity = quotes_capacity
                 self.header.source_count = 0
                 self.header.source_capacity = source_capacity
-            else:
-                # TODO: scan the mmap and figure out how many quotes are there?
-                cybreakpoint(1)
 
-        self.header.quote_errors = 0
-        self.header.source_errors = 0
+            self.header.quote_errors = 0
+            self.header.source_errors = 0
+        else:
+            # Nothing to change for a client
+            pass
 
+        self.sources = <QCSourceHeader *> (self.mmap_data + sizeof(QCHeader))
+        self.records = <QCRecord *> (self.mmap_data + sizeof(QCHeader) + self.header.source_capacity * sizeof(QCSourceHeader))
+
+        self.source_map = HashMap(sizeof(Name2Idx), self.header.source_capacity)
+        self.ticker_map = HashMap(sizeof(Name2Idx), self.header.quote_capacity)
+
+        if self.is_server and not is_new_file:
+            assert self.header.quote_capacity >= quotes_capacity, f'Existing quote capacity less than requested'
+            assert self.header.source_capacity >= source_capacity, f'Existing source capacity less than requested'
+
+            n_valid_sources = 0
+            n_valid_quotes = 0
+
+            for i in range(self.header.source_count):
+                src_h = &self.sources[i]
+                if src_h.magic_number != TRANSPORT_HDR_MGC:
+                    continue
+
+                strlcpy(nidx.name, src_h.data_source_id, TRANSPORT_SENDER_SIZE)
+                nidx.idx = i
+                n_valid_sources += 1
+                if self.source_map.set(&nidx) != NULL:
+                    assert False, f'Duplicate datasource'
+
+            cyassert(self.header.source_count == n_valid_sources)
+            cyassert(self.header.source_count == self.source_map.count())
+
+            for i in range(self.header.quote_count):
+                q = &self.records[i]
+                if q.magic_number != TRANSPORT_HDR_MGC:
+                    continue
+                strlcpy(nidx.name, q.v2_ticker, V2_TICKER_MAX_LEN)
+                nidx.idx = i
+                n_valid_quotes += 1
+                if self.ticker_map.set(&nidx) != NULL:
+                    assert False, f'Duplicate datasource'
+
+            cyassert(self.header.quote_count == n_valid_quotes)
+            cyassert(self.header.quote_count == self.ticker_map.count())
 
     @staticmethod
     cdef size_t calc_shmem_size(int source_capacity, int quotes_capacity):
@@ -124,6 +185,7 @@ cdef class SharedQuotesCache:
         :return: 
         """
         cyassert(self.is_server)
+        cyassert(self.source_map.count() == self.header.source_count)
 
         if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE-1:
             self.header.source_errors += 1
@@ -171,6 +233,7 @@ cdef class SharedQuotesCache:
         src_h.quote_errors = 0
         src_h.source_errors = 0
 
+        cyassert(self.header.source_count == self.source_map.count())
         return src_i
 
     cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo iinfo) nogil:
@@ -185,6 +248,7 @@ cdef class SharedQuotesCache:
         :return: negative if error, >= 0 as quote index of the new instrument 
         """
         cyassert(self.is_server)
+        cyassert(self.ticker_map.count() == self.header.quote_count)
 
         if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE-1:
             self.header.source_errors += 1
@@ -249,6 +313,8 @@ cdef class SharedQuotesCache:
         q.iinfo = iinfo
         SharedQuotesCache.reset_quote(&q.quote)
         src_h.instruments_registered += 1
+
+        cyassert(self.header.quote_count == self.ticker_map.count())
         return q_idx
 
 
@@ -359,8 +425,20 @@ cdef class SharedQuotesCache:
 
         return msg.instrument_index
 
-    def __dealloc__(self):
+    def close(self):
         if self.mmap_data != NULL:
             munmap(self.mmap_data, self.mmap_size)
+            self.mmap_data == NULL
+
         if self.is_server:
             shm_unlink(SHARED_FN)
+
+        if self.lock_fd != -1:
+            close(self.lock_fd)
+
+        if self.lock_acquired:
+            lock.release()
+            self.lock_acquired = 0
+
+    def __dealloc__(self):
+        self.close()

@@ -1,6 +1,6 @@
 import time
 from libc.stdlib cimport malloc, free
-from libc.string cimport memcpy
+from libc.string cimport memcpy, memcmp
 import unittest
 import zmq
 from libc.math cimport isnan, NAN, HUGE_VAL
@@ -365,4 +365,39 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         msg.instrument_id = 123
 
 
+    def test_source_client_connect_memory_sharing(self):
+        qs = SharedQuotesCache(1234, 5, 3)
+        cdef InstrumentInfo iinfo
+        iinfo.tick_size = 10
+        iinfo.min_lot_size = 5
+        iinfo.margin_req = 100
+        iinfo.theo_price = 200
+        iinfo.price_scale = 2
+        iinfo.usd_point_value = 1
+
+        qc = SharedQuotesCache(0, 0, 0)
+        qc2 = SharedQuotesCache(0, 0, 0)
+        qc3 = SharedQuotesCache(0, 0, 0)
+        assert qc.mmap_data != qs.mmap_data
+        assert qs.mmap_size == qc.mmap_size
+
+        assert qs.source_initialize(b'12345', 12345) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_activate(b'12345') == 0
+
+        assert qc.header.quote_count == 1
+        assert qc.header.source_count == 1
+
+        assert qc.ticker_map.count() == 0
+        assert qc.source_map.count() == 0
+
+        self.assertRaises(RuntimeError, SharedQuotesCache, 1234, 5, 3)
+
+        assert memcmp(qs.mmap_data, qc.mmap_data, qs.mmap_size) == 0
+
+        assert memcmp(&qs.sources[0], &qc.sources[0], sizeof(QCSourceHeader)) == 0
+        assert qs.sources[0].magic_number == TRANSPORT_HDR_MGC
+
+        assert memcmp(&qs.records[0], &qc.records[0], sizeof(QCRecord)) == 0
+        assert qs.records[0].magic_number == TRANSPORT_HDR_MGC
 
