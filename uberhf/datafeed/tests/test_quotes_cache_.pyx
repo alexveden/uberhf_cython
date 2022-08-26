@@ -512,8 +512,11 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         msg.quote.last = 150
         msg.quote.last_upd_utc = 9999
         assert qs.source_on_quote(&msg) == 0
+        cdef QCRecord * qr = qc.get(b'RU.F.RTS')
+        assert qr.quote.bid == 100
         # server dies or closes
         qs.close()
+        assert qs.mmap_data == NULL
 
         assert qc.get(NULL) == NULL
         assert qc.get(b'') == NULL
@@ -522,8 +525,11 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.get(b'RU.F.RTS') != NULL
         assert qc.get_source(b'12345') != NULL
 
-        cdef QCRecord * qr = qc.get(b'RU.F.RTS')
-        assert qr.quote.bid == 100
+
+        assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_INACTIVE
+        assert qc.get_source(b'12345').data_source_life_id == 0
+        # Server resets quotes after close!
+        assert isnan(qr.quote.bid)
 
         #
         # New server restarted and running

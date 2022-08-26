@@ -129,10 +129,10 @@ cdef class SharedQuotesCache:
             assert self.header.quote_capacity >= quotes_capacity, f'Existing quote capacity less than requested'
             assert self.header.source_capacity >= source_capacity, f'Existing source capacity less than requested'
 
-        self._reload_sources()
+        self._reload_sources_or_srvreset()
         self._reload_quotes()
 
-    cdef void _reload_sources(self) nogil:
+    cdef void _reload_sources_or_srvreset(self) nogil:
         cdef Name2Idx nidx
         cdef QCRecord * q
         cdef int n_valid_sources = 0
@@ -470,7 +470,7 @@ cdef class SharedQuotesCache:
             return NULL
 
         if self.header.source_count != self.source_map.count():
-            self._reload_sources()
+            self._reload_sources_or_srvreset()
 
         cdef Name2Idx * src_idx = <Name2Idx *> self.source_map.get(data_source_id)
         if src_idx == NULL:
@@ -479,10 +479,15 @@ cdef class SharedQuotesCache:
 
         return &self.sources[src_idx.idx]
 
-    def close(self):
+    cdef close(self):
+        if self.is_server:
+            if self.mmap_data != NULL:
+                # Setting all sources as inactive and closing
+                self._reload_sources_or_srvreset()
+
         if self.mmap_data != NULL:
             munmap(self.mmap_data, self.mmap_size)
-            self.mmap_data == NULL
+            self.mmap_data = NULL
 
         if self.shmem_fd != -1:
             close(self.shmem_fd)
