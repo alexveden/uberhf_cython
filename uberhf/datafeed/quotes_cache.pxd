@@ -46,6 +46,7 @@ cdef class SharedQuotesCache:
     cdef bint is_server
     cdef int lock_fd
     cdef bint lock_acquired
+    cdef int shmem_fd
     cdef void * mmap_data
     cdef size_t mmap_size
     cdef unsigned int uhffeed_life_id

@@ -12,9 +12,11 @@ from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, 
 from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
 from uberhf.datafeed.quotes_cache cimport SharedQuotesCache, QCRecord, QCSourceHeader
 from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
-
+from posix.mman cimport shm_unlink
 
 class CyQuotesCacheTestCase(unittest.TestCase):
+    def tearDown(self) -> None:
+        shm_unlink(b'/uhfeed_shared_cache')
 
     def test_init(self):
         qc = SharedQuotesCache(1234, 5, 100)
@@ -478,6 +480,63 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         # Bid also passed by reference
         assert qr.quote.bid == 101
 
+
+    def test_source_server_early_close(self):
+        qs = SharedQuotesCache(1234, 5, 3)
+        cdef InstrumentInfo iinfo
+        iinfo.tick_size = 10
+        iinfo.min_lot_size = 5
+        iinfo.margin_req = 100
+        iinfo.theo_price = 200
+        iinfo.price_scale = 2
+        iinfo.usd_point_value = 1
+
+        qc = SharedQuotesCache(0, 0, 0)
+        assert qs.mmap_size == qc.mmap_size
+        assert memcmp(qc.mmap_data, qs.mmap_data, qs.mmap_size) == 0
+
+        assert qs.source_initialize(b'12345', 888) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_activate(b'12345') == 0
+        # server dies or closes
+        qs.close()
+
+        assert qc.get(NULL) == NULL
+        assert qc.get(b'') == NULL
+        assert qc.get(b'RU.F.SI') == NULL
+
+        assert qc.get(b'RU.F.RTS') != NULL
+        assert qc.get_source(b'12345') != NULL
+
+        #
+        # New server restarted and running
+        #
+        qs2 = SharedQuotesCache(7907, 5, 3)
+        assert qc.mmap_data != qs2.mmap_data
+        assert qs2.mmap_size == qc.mmap_size
+        assert memcmp(qc.mmap_data, qs2.mmap_data, qs2.mmap_size) == 0
+
+        assert qc.header.source_count == 1
+        assert qc.header.quote_count == 1
+        assert qs2.header.source_count == 1
+        assert qs2.header.quote_count == 1
+
+        self.assertEqual(qs2.source_initialize(b'777', 12345), 1)
+        assert qs2.source_register_instrument(b'777', b'RU.F.Si', 9887, iinfo) == 1
+        assert qs2.source_activate(b'777') == 1
+
+        assert qc.get(b'RU.F.RTS') != NULL
+        assert qc.get(b'RU.F.Si') != NULL
+        assert qc.get_source(b'777').quotes_status == ProtocolStatus.UHF_ACTIVE
+
+        # Source was reset at the server restart routine
+        assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_INACTIVE
+        assert qc.get_source(b'12345').data_source_life_id == 0
+
+    def test_client_early_connect(self):
+        self.assertRaises(FileNotFoundError, SharedQuotesCache, 0, 0, 0)
+        qs = SharedQuotesCache(1234, 5, 3)
+        qc = SharedQuotesCache(0, 0, 0)
 
 
 

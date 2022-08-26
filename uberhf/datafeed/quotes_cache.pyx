@@ -27,6 +27,7 @@ cdef class SharedQuotesCache:
         self.uhffeed_life_id = uhffeed_life_id
         self.is_server = uhffeed_life_id != 0
         self.mmap_data = NULL
+        self.shmem_fd = -1
 
         cdef int sh_fn_access = 0
         if self.is_server:
@@ -53,13 +54,13 @@ cdef class SharedQuotesCache:
             self.lock_acquired = 0 # Client don't hold locks
             self.lock_fd = -1
 
-        cdef int _fd = shm_open(SHARED_FN, sh_fn_access, S_IRWXU)
+        self.shmem_fd = shm_open(SHARED_FN, sh_fn_access, S_IRWXU)
 
-        if _fd == -1:
-            raise RuntimeError(f'shm_open: error {strerror(errno)}')
+        if self.shmem_fd == -1:
+            raise FileNotFoundError(f'shm_open: possibly no server running. {strerror(errno)}')
 
         cdef struct_stat statbuf
-        fstat(_fd, &statbuf)
+        fstat(self.shmem_fd, &statbuf)
 
         cdef size_t shmem_size = 0
         is_new_file = False
@@ -68,18 +69,19 @@ cdef class SharedQuotesCache:
             cyassert(self.is_server == 1) # Only for servers!
             # New file lets make a valid cache
             shmem_size = SharedQuotesCache.calc_shmem_size(source_capacity, quotes_capacity)
-            ftruncate(_fd, shmem_size)
+            ftruncate(self.shmem_fd, shmem_size)
             is_new_file = True
         else:
             shmem_size = statbuf.st_size
 
         if self.is_server:
-            self.mmap_data = mmap(NULL, shmem_size, PROT_WRITE | PROT_READ, MAP_SHARED, _fd, 0)
+            self.mmap_data = mmap(NULL, shmem_size, PROT_WRITE | PROT_READ, MAP_SHARED, self.shmem_fd, 0)
             self.mmap_size = shmem_size
 
             if self.mmap_data == MAP_FAILED:
                 # Close shmem descriptor
-                close(_fd)
+                close(self.shmem_fd)
+                self.shmem_fd = -1
                 self.mmap_data = NULL
                 assert self.mmap_data != MAP_FAILED, f'mmap: error {strerror(errno)}'
                 self.mmap_size = 0
@@ -88,19 +90,16 @@ cdef class SharedQuotesCache:
                 # Zero memory if the file is new to avoid junk data
                 memset(self.mmap_data, 0, self.mmap_size)
         else:
-            self.mmap_data = mmap(NULL, shmem_size, PROT_READ, MAP_SHARED, _fd, 0)
+            self.mmap_data = mmap(NULL, shmem_size, PROT_READ, MAP_SHARED, self.shmem_fd, 0)
             self.mmap_size = shmem_size
 
-
         # man mmap: After the mmap() call has returned, the file descriptor, fd, can be closed immediately without invalidating the mapping.
-        close(_fd)
+        #close(_fd)
 
         #
         # Initializing the headers
         #
         self.header = <QCHeader*>self.mmap_data
-
-
 
         cdef QCSourceHeader* src_h
         cdef QCRecord * q
@@ -146,6 +145,14 @@ cdef class SharedQuotesCache:
             nidx.idx = i
             n_valid_sources += 1
             self.source_map.set(&nidx)
+
+            if self.is_server:
+                # Reset source stats
+                src_h.quotes_status = ProtocolStatus.UHF_INACTIVE
+                src_h.data_source_life_id = 0
+                src_h.source_errors = 0
+                src_h.quote_errors = 0
+
 
         cyassert(self.header.source_count == n_valid_sources)
         cyassert(self.header.source_count == self.source_map.count())
@@ -433,6 +440,8 @@ cdef class SharedQuotesCache:
         return msg.instrument_index
 
     cdef QCRecord * get(self, char * v2_ticker) nogil:
+        cyassert(self.is_server == 0) # Only for clients!
+
         if v2_ticker == NULL:
             return NULL
         
@@ -446,6 +455,8 @@ cdef class SharedQuotesCache:
         return &self.records[tckr_idx.idx]
 
     cdef QCSourceHeader * get_source(self, char * data_source_id) nogil:
+        cyassert(self.is_server == 0) # Only for clients!
+
         if data_source_id == NULL:
             return NULL
 
@@ -464,8 +475,11 @@ cdef class SharedQuotesCache:
             munmap(self.mmap_data, self.mmap_size)
             self.mmap_data == NULL
 
-        if self.is_server:
-            shm_unlink(SHARED_FN)
+        if self.shmem_fd != -1:
+            close(self.shmem_fd)
+
+        #if self.is_server:
+        #    shm_unlink(SHARED_FN)
 
         if self.lock_fd != -1:
             close(self.lock_fd)
