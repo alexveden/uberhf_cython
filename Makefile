@@ -34,7 +34,7 @@ tests-debug: build-debug
 	$(CYTOOL) debug -t $(p)
 
 run:  build-debug
-	$(CYTOOL) run uberhf/datafeed/tests/mem_pool_benchmark.pyx@main
+	$(CYTOOL) run benchmarks/quotes_cache_raw.pyx@main
 
 debug: build-debug
 	$(CYTOOL) debug uberhf/datafeed/tests/mem_pool_benchmark.pyx@main

@@ -3,7 +3,7 @@ from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy
 import unittest
 import zmq
-from libc.math cimport isnan
+from libc.math cimport isnan, NAN, HUGE_VAL
 from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
@@ -249,5 +249,120 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.source_disconnect(b'123456') == -1
         assert qc.source_disconnect(b'777') == -2
         assert qc.header.source_errors == 4, qc.header.source_errors
+
+    def test_source_on_quote(self):
+        qc = SharedQuotesCache(777, 5, 3)
+        cdef InstrumentInfo iinfo
+        iinfo.tick_size = 10
+        iinfo.min_lot_size = 5
+        iinfo.margin_req = 100
+        iinfo.theo_price = 200
+        iinfo.price_scale = 2
+        iinfo.usd_point_value = 1
+
+        cdef ProtocolDSQuoteMessage msg
+        msg.instrument_index = 0
+        msg.instrument_id = 123
+        msg.is_snapshot = 1
+        msg.header.client_life_id = 888
+        msg.header.server_life_id = 777
+        msg.quote.bid = 100
+        msg.quote.ask = 200
+        msg.quote.bid_size = 1
+        msg.quote.ask_size = 2
+        msg.quote.last = 150
+        msg.quote.last_upd_utc = 9999
+
+        assert qc.source_initialize(b'12345', 888) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_activate(b'12345') == 0
+
+        assert qc.source_on_quote(&msg) == 0
+        assert qc.sources[0].quotes_processed == 1
+        assert qc.sources[0].last_quote_ns == 9999
+
+        cdef QCRecord * q = &qc.records[0]
+
+        assert q.quote.bid == 100
+        assert q.quote.ask == 200
+        assert q.quote.bid_size == 1
+        assert q.quote.ask_size == 2
+        assert q.quote.last == 150
+        assert q.quote.last_upd_utc == 9999
+
+        # Next quote update partially
+        msg.is_snapshot = 0
+        msg.quote.bid = HUGE_VAL
+        msg.quote.ask = HUGE_VAL
+        msg.quote.bid_size = HUGE_VAL
+        msg.quote.ask_size = HUGE_VAL
+        msg.quote.last = HUGE_VAL
+        msg.quote.last_upd_utc = 8888
+
+        assert qc.source_on_quote(&msg) == 0
+        q = &qc.records[0]
+
+        assert qc.sources[0].quotes_processed == 2
+        assert qc.sources[0].last_quote_ns == 8888
+
+        assert q.quote.bid == 100
+        assert q.quote.ask == 200
+        assert q.quote.bid_size == 1
+        assert q.quote.ask_size == 2
+        assert q.quote.last == 150
+        assert q.quote.last_upd_utc == 8888
+
+        # Next quote update partially
+        msg.is_snapshot = 0
+        msg.quote.bid = 101
+        msg.quote.ask = 201
+        msg.quote.bid_size = 11
+        msg.quote.ask_size = 12
+        msg.quote.last = 151
+        msg.quote.last_upd_utc = 8889
+
+        assert qc.source_on_quote(&msg) == 0
+        q = &qc.records[0]
+
+        assert qc.sources[0].quotes_processed == 3
+        assert qc.sources[0].last_quote_ns == 8889
+
+        assert q.quote.bid == 101
+        assert q.quote.ask == 201
+        assert q.quote.bid_size == 11
+        assert q.quote.ask_size == 12
+        assert q.quote.last == 151
+        assert q.quote.last_upd_utc == 8889
+
+        msg.instrument_index = -1
+        assert qc.source_on_quote(&msg) == -1
+        assert qc.header.quote_errors == 1
+        #assert qc.sources[0].quote_errors == 1
+
+        msg.instrument_index = 1
+        assert qc.source_on_quote(&msg) == -1
+        assert qc.header.quote_errors == 2
+
+        msg.instrument_index = 0
+        msg.header.server_life_id = 98087798
+        assert qc.source_on_quote(&msg) == -3
+        assert qc.header.quote_errors == 3
+        assert qc.sources[0].quote_errors == 1
+        msg.header.server_life_id = 777
+
+
+        msg.instrument_index = 0
+        msg.header.client_life_id = 98087798
+        assert qc.source_on_quote(&msg) == -2
+        assert qc.header.quote_errors == 4
+        assert qc.sources[0].quote_errors == 2
+        msg.header.client_life_id = 888
+
+        msg.instrument_id = 91828
+        assert qc.source_on_quote(&msg) == -4
+        assert qc.header.quote_errors == 5
+        assert qc.sources[0].quote_errors == 3
+        msg.instrument_id = 123
+
 
 

@@ -10,7 +10,10 @@ from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE, V2_TICKER_MAX_LEN, ProtocolStatus, TRANSPORT_HDR_MGC
 from uberhf.includes.hashmap cimport HashMap
 from uberhf.includes.utils cimport strlcpy
-from libc.math cimport NAN
+from libc.math cimport NAN, HUGE_VAL
+from libc.limits cimport LONG_MAX
+
+
 DEF SHARED_FN = b'/uhfeed_shared_cache'
 
 cdef class SharedQuotesCache:
@@ -250,6 +253,13 @@ cdef class SharedQuotesCache:
 
 
     cdef int source_activate(self, char * data_src_id) nogil:
+        """
+        Activates data source 
+        
+        :param data_src_id: previously registered source 
+        
+        :return: negative on error, source index in self.sources 
+        """
         cyassert(self.is_server)
 
         if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE - 1:
@@ -274,6 +284,12 @@ cdef class SharedQuotesCache:
             return src_idx.idx
 
     cdef int source_disconnect(self, char * data_src_id) nogil:
+        """
+        Marks source as inactive
+        
+        :param data_src_id: previously registered source
+        :return: negative on error, source index in self.sources
+        """
         cyassert(self.is_server)
 
         if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE - 1:
@@ -293,7 +309,55 @@ cdef class SharedQuotesCache:
         return src_idx.idx
 
     cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
-        pass
+        """
+        Processing quote messages
+        
+        :param msg: 
+        :return: negative on error, or quote cache index of updated quote
+        """
+        cyassert(self.is_server)
+
+        if msg.instrument_index < 0 or msg.instrument_index >= self.header.quote_count:
+            self.header.quote_errors += 1
+            return -1
+
+        cdef QCRecord * q = &self.records[msg.instrument_index]
+        cdef QCSourceHeader * src_h = &self.sources[q.data_source_hidx]
+        if src_h.data_source_life_id != msg.header.client_life_id:
+            self.header.quote_errors += 1
+            src_h.quote_errors += 1
+            return -2
+        if self.header.uhffeed_life_id != msg.header.server_life_id:
+            self.header.quote_errors += 1
+            src_h.quote_errors += 1
+            return -3
+
+        if q.instrument_id != msg.instrument_id:
+            self.header.quote_errors += 1
+            src_h.quote_errors += 1
+            return -4
+
+        if msg.is_snapshot:
+            # Full quote snapshot make a full copy
+            q.quote = msg.quote
+        else:
+            if msg.quote.ask != HUGE_VAL:
+                q.quote.ask = msg.quote.ask
+            if msg.quote.bid != HUGE_VAL:
+                q.quote.bid = msg.quote.bid
+            if msg.quote.last != HUGE_VAL:
+                q.quote.last = msg.quote.last
+            if msg.quote.ask_size != HUGE_VAL:
+                q.quote.ask_size = msg.quote.ask_size
+            if msg.quote.bid_size != HUGE_VAL:
+                q.quote.bid_size = msg.quote.bid_size
+
+            q.quote.last_upd_utc = msg.quote.last_upd_utc
+
+        src_h.last_quote_ns = q.quote.last_upd_utc
+        src_h.quotes_processed += 1
+
+        return msg.instrument_index
 
     def __dealloc__(self):
         if self.mmap_data != NULL:
