@@ -498,6 +498,20 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qs.source_initialize(b'12345', 888) == 0
         assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
         assert qs.source_activate(b'12345') == 0
+
+        cdef ProtocolDSQuoteMessage msg
+        msg.instrument_index = 0
+        msg.instrument_id = 123
+        msg.is_snapshot = 1
+        msg.header.client_life_id = 888
+        msg.header.server_life_id = 1234
+        msg.quote.bid = 100
+        msg.quote.ask = 200
+        msg.quote.bid_size = 1
+        msg.quote.ask_size = 2
+        msg.quote.last = 150
+        msg.quote.last_upd_utc = 9999
+        assert qs.source_on_quote(&msg) == 0
         # server dies or closes
         qs.close()
 
@@ -507,6 +521,9 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
         assert qc.get(b'RU.F.RTS') != NULL
         assert qc.get_source(b'12345') != NULL
+
+        cdef QCRecord * qr = qc.get(b'RU.F.RTS')
+        assert qr.quote.bid == 100
 
         #
         # New server restarted and running
@@ -539,6 +556,9 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qs2.source_activate(b'12345') == 0
 
         assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_ACTIVE
+
+        # Quotes were reset!
+        assert isnan(qr.quote.bid)
 
     def test_client_early_connect(self):
         self.assertRaises(FileNotFoundError, SharedQuotesCache, 0, 0, 0)

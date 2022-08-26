@@ -134,8 +134,9 @@ cdef class SharedQuotesCache:
 
     cdef void _reload_sources(self) nogil:
         cdef Name2Idx nidx
+        cdef QCRecord * q
         cdef int n_valid_sources = 0
-
+        cdef int i, j
         for i in range(self.header.source_count):
             src_h = &self.sources[i]
             if src_h.magic_number != TRANSPORT_HDR_MGC:
@@ -153,6 +154,14 @@ cdef class SharedQuotesCache:
                 src_h.source_errors = 0
                 src_h.quote_errors = 0
 
+                for j in range(self.header.quote_count):
+                    q = &self.records[j]
+                    if q.magic_number != TRANSPORT_HDR_MGC:
+                        continue
+                    # Also resetting all quotes of this source
+                    if q.data_source_hidx == i:
+                        cyassert(strcmp(q.data_source_id, src_h.data_source_id) == 0)
+                        SharedQuotesCache.reset_quote(&q.quote)
 
         cyassert(self.header.source_count == n_valid_sources)
         cyassert(self.header.source_count == self.source_map.count())
