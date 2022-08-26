@@ -56,7 +56,7 @@ cdef class SharedQuotesCache:
         cdef int _fd = shm_open(SHARED_FN, sh_fn_access, S_IRWXU)
 
         if _fd == -1:
-            assert _fd != -1, f'shm_open: error {strerror(errno)}'
+            raise RuntimeError(f'shm_open: error {strerror(errno)}')
 
         cdef struct_stat statbuf
         fstat(_fd, &statbuf)
@@ -78,9 +78,12 @@ cdef class SharedQuotesCache:
             self.mmap_size = shmem_size
 
             if self.mmap_data == MAP_FAILED:
+                # Close shmem descriptor
+                close(_fd)
                 self.mmap_data = NULL
                 assert self.mmap_data != MAP_FAILED, f'mmap: error {strerror(errno)}'
                 self.mmap_size = 0
+                raise RuntimeError(f'mmap failed')
             if is_new_file:
                 # Zero memory if the file is new to avoid junk data
                 memset(self.mmap_data, 0, self.mmap_size)

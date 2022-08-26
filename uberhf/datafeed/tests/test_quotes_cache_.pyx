@@ -465,6 +465,10 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert src_h.data_source_id == b'777'
         assert src_h.instruments_registered == 1
 
+
+        assert qc.get_source(NULL) == NULL
+        assert qc.get_source(b'asdasd') == NULL
+
         # This will cause segmentation fault because the memory is readonly!
         #src_h.instruments_registered = 2
 
