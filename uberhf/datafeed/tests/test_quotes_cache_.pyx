@@ -533,6 +533,13 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_INACTIVE
         assert qc.get_source(b'12345').data_source_life_id == 0
 
+        # Next initialization
+        assert qs2.source_initialize(b'12345', 888) == 0
+        assert qs2.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs2.source_activate(b'12345') == 0
+
+        assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_ACTIVE
+
     def test_client_early_connect(self):
         self.assertRaises(FileNotFoundError, SharedQuotesCache, 0, 0, 0)
         qs = SharedQuotesCache(1234, 5, 3)
