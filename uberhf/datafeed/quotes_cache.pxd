@@ -62,8 +62,13 @@ cdef class SharedQuotesCache:
     cdef int source_disconnect(self, char * data_src_id) nogil
     cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
+    cdef QCRecord * get(self, char * v2_ticker) nogil
+    cdef QCSourceHeader * get_source(self, char * data_source_id) nogil
+
     @staticmethod
     cdef size_t calc_shmem_size(int source_capacity, int quotes_capacity)
+    cdef void _reload_sources(self) nogil
+    cdef void _reload_quotes(self) nogil
 
     @staticmethod
     cdef void reset_quote(Quote *q) nogil

@@ -401,3 +401,79 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert memcmp(&qs.records[0], &qc.records[0], sizeof(QCRecord)) == 0
         assert qs.records[0].magic_number == TRANSPORT_HDR_MGC
 
+    def test_source_client_get_quote(self):
+        qs = SharedQuotesCache(1234, 5, 3)
+        cdef InstrumentInfo iinfo
+        iinfo.tick_size = 10
+        iinfo.min_lot_size = 5
+        iinfo.margin_req = 100
+        iinfo.theo_price = 200
+        iinfo.price_scale = 2
+        iinfo.usd_point_value = 1
+
+        qc = SharedQuotesCache(0, 0, 0)
+        qc2 = SharedQuotesCache(0, 0, 0)
+        qc3 = SharedQuotesCache(0, 0, 0)
+        assert qc.mmap_data != qs.mmap_data
+        assert qs.mmap_size == qc.mmap_size
+
+        assert qs.source_initialize(b'12345', 888) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_activate(b'12345') == 0
+
+        assert qc.get(NULL) == NULL
+        assert qc.get(b'') == NULL
+        assert qc.get(b'RU.F.SI') == NULL
+
+        cdef QCRecord * qr = qc.get(b'RU.F.RTS')
+        cdef QCSourceHeader * src_h = qc.get_source(b'12345')
+
+        cdef ProtocolDSQuoteMessage msg
+        msg.instrument_index = 0
+        msg.instrument_id = 123
+        msg.is_snapshot = 1
+        msg.header.client_life_id = 888
+        msg.header.server_life_id = 1234
+        msg.quote.bid = 100
+        msg.quote.ask = 200
+        msg.quote.bid_size = 1
+        msg.quote.ask_size = 2
+        msg.quote.last = 150
+        msg.quote.last_upd_utc = 9999
+        assert qs.source_on_quote(&msg) == 0
+
+        assert qr != NULL
+        assert qr.v2_ticker == b'RU.F.RTS'
+        assert qr.instrument_id == 123
+        assert src_h.data_source_id == b'12345'
+        assert src_h.instruments_registered == 1
+        assert qr.quote.bid == 100
+
+        #
+        # Late intialization is also supported
+        #
+        assert qs.source_initialize(b'777', 12345) == 1
+        assert qs.source_register_instrument(b'777', b'RU.F.Si', 9887, iinfo) == 1
+        assert qs.source_activate(b'777') == 1
+
+        cdef QCRecord * qr2 = qc.get(b'RU.F.Si')
+        assert qr2 != NULL
+        assert qr2.v2_ticker == b'RU.F.Si'
+        assert qr2.instrument_id == 9887
+
+        src_h = qc.get_source(b'777')
+        assert src_h.data_source_id == b'777'
+        assert src_h.instruments_registered == 1
+
+        # This will cause segmentation fault because the memory is readonly!
+        #src_h.instruments_registered = 2
+
+        msg.quote.bid = 101
+        assert qs.source_on_quote(&msg) == 0
+
+        # Bid also passed by reference
+        assert qr.quote.bid == 101
+
+
+
+

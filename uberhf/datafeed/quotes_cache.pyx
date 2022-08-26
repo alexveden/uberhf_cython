@@ -28,8 +28,6 @@ cdef class SharedQuotesCache:
         self.is_server = uhffeed_life_id != 0
         self.mmap_data = NULL
 
-
-
         cdef int sh_fn_access = 0
         if self.is_server:
             if not lock.acquire(block=False):
@@ -100,7 +98,7 @@ cdef class SharedQuotesCache:
         self.header = <QCHeader*>self.mmap_data
 
 
-        cdef Name2Idx nidx
+
         cdef QCSourceHeader* src_h
         cdef QCRecord * q
 
@@ -129,35 +127,41 @@ cdef class SharedQuotesCache:
             assert self.header.quote_capacity >= quotes_capacity, f'Existing quote capacity less than requested'
             assert self.header.source_capacity >= source_capacity, f'Existing source capacity less than requested'
 
-            n_valid_sources = 0
-            n_valid_quotes = 0
+        self._reload_sources()
+        self._reload_quotes()
 
-            for i in range(self.header.source_count):
-                src_h = &self.sources[i]
-                if src_h.magic_number != TRANSPORT_HDR_MGC:
-                    continue
+    cdef void _reload_sources(self) nogil:
+        cdef Name2Idx nidx
+        cdef int n_valid_sources = 0
 
-                strlcpy(nidx.name, src_h.data_source_id, TRANSPORT_SENDER_SIZE)
-                nidx.idx = i
-                n_valid_sources += 1
-                if self.source_map.set(&nidx) != NULL:
-                    assert False, f'Duplicate datasource'
+        for i in range(self.header.source_count):
+            src_h = &self.sources[i]
+            if src_h.magic_number != TRANSPORT_HDR_MGC:
+                continue
 
-            cyassert(self.header.source_count == n_valid_sources)
-            cyassert(self.header.source_count == self.source_map.count())
+            strlcpy(nidx.name, src_h.data_source_id, TRANSPORT_SENDER_SIZE)
+            nidx.idx = i
+            n_valid_sources += 1
+            self.source_map.set(&nidx)
 
-            for i in range(self.header.quote_count):
-                q = &self.records[i]
-                if q.magic_number != TRANSPORT_HDR_MGC:
-                    continue
-                strlcpy(nidx.name, q.v2_ticker, V2_TICKER_MAX_LEN)
-                nidx.idx = i
-                n_valid_quotes += 1
-                if self.ticker_map.set(&nidx) != NULL:
-                    assert False, f'Duplicate datasource'
+        cyassert(self.header.source_count == n_valid_sources)
+        cyassert(self.header.source_count == self.source_map.count())
 
-            cyassert(self.header.quote_count == n_valid_quotes)
-            cyassert(self.header.quote_count == self.ticker_map.count())
+    cdef void _reload_quotes(self) nogil:
+        cdef Name2Idx nidx
+        cdef int n_valid_quotes = 0
+
+        for i in range(self.header.quote_count):
+            q = &self.records[i]
+            if q.magic_number != TRANSPORT_HDR_MGC:
+                continue
+            strlcpy(nidx.name, q.v2_ticker, V2_TICKER_MAX_LEN)
+            nidx.idx = i
+            n_valid_quotes += 1
+            self.ticker_map.set(&nidx)
+
+        cyassert(self.header.quote_count == n_valid_quotes)
+        cyassert(self.header.quote_count == self.ticker_map.count())
 
     @staticmethod
     cdef size_t calc_shmem_size(int source_capacity, int quotes_capacity):
@@ -424,6 +428,33 @@ cdef class SharedQuotesCache:
         src_h.quotes_processed += 1
 
         return msg.instrument_index
+
+    cdef QCRecord * get(self, char * v2_ticker) nogil:
+        if v2_ticker == NULL:
+            return NULL
+        
+        if self.header.quote_count != self.ticker_map.count():
+            self._reload_quotes()
+
+        cdef Name2Idx * tckr_idx = <Name2Idx*>self.ticker_map.get(v2_ticker)
+        if tckr_idx == NULL:
+            return NULL
+        cyassert(tckr_idx.idx >= 0 and tckr_idx.idx < self.header.quote_capacity)
+        return &self.records[tckr_idx.idx]
+
+    cdef QCSourceHeader * get_source(self, char * data_source_id) nogil:
+        if data_source_id == NULL:
+            return NULL
+
+        if self.header.source_count != self.source_map.count():
+            self._reload_sources()
+
+        cdef Name2Idx * src_idx = <Name2Idx *> self.source_map.get(data_source_id)
+        if src_idx == NULL:
+            return NULL
+        cyassert(src_idx.idx >= 0 and src_idx.idx < self.header.quote_capacity)
+
+        return &self.sources[src_idx.idx]
 
     def close(self):
         if self.mmap_data != NULL:
