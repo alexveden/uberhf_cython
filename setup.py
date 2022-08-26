@@ -12,7 +12,7 @@ project_extensions = [
               # get rid of weird Numpy API warnings
               define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
               # sudo ln -s /usr/lib/x86_64-linux-gnu/libzmq.so /usr/local/lib/libzmq.so
-              libraries=["zmq"],
+              libraries=["zmq", "rt"],
               #library_dirs=['/home/ubertrader/cloud/code/uberhf/.cython_tools/lib'],
               # Also may require: pip install pyzmq --install-option="--zmq=bundled"
               include_dirs=[os.path.dirname(__file__)] + [np.get_include()],

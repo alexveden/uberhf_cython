@@ -1,6 +1,21 @@
-from uberhf.datafeed.uhffeed cimport Quote
 from libc.stdint cimport uint64_t, uint16_t
 from uberhf.includes.uhfprotocols cimport *
+
+ctypedef struct Quote:
+    long last_upd_utc
+    double bid
+    double ask
+    double last
+    double bid_size
+    double ask_size
+
+ctypedef struct InstrumentInfo:
+    double theo_price
+    double tick_size
+    double min_lot_size
+    int price_scale
+    double margin_req
+    bint usd_point_value
 
 ctypedef struct TransportHeader:
     uint16_t magic_number
@@ -28,3 +43,4 @@ ctypedef struct ProtocolDSQuoteMessage:
     int instrument_index
     bint is_snapshot
     Quote quote
+
