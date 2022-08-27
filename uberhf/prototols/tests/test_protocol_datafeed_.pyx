@@ -527,17 +527,17 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                         dt_prev_call = dt_now
 
                     if cstate.status == ProtocolStatus.UHF_ACTIVE and sstate.status == ProtocolStatus.UHF_ACTIVE:
-                        was_active = True
                         #self.assertGreater(ps.send_source_status(b'SRC1', ProtocolStatus.UHF_ACTIVE), 0)
-                        assert ps.send_feed_update(-1, 1) == PROTOCOL_ERR_ARG_ERR
-                        assert ps.send_feed_update(0, 0) == PROTOCOL_ERR_ARG_ERR
-                        assert ps.send_feed_update(0, 3) == PROTOCOL_ERR_ARG_ERR
+                        assert ps.send_feed_update(-1, 1, 2) == PROTOCOL_ERR_ARG_ERR
+                        assert ps.send_feed_update(0, 0, 2) == PROTOCOL_ERR_ARG_ERR
+                        assert ps.send_feed_update(0, 3, 2) == PROTOCOL_ERR_ARG_ERR
 
-                        self.assertGreater(ps.send_feed_update(17, 1), 0)
-                        self.assertGreater(ps.send_feed_update(17, 2), 0)
+                        # Setting bit in decimal for pc.module_id=22 -> 2**22 -> 22th bit is set to true
+                        self.assertGreater(ps.send_feed_update(17, 1, 2**22), 0)
+                        self.assertGreater(ps.send_feed_update(17, 2, 2**22), 0)
+                        assert pc.send_disconnect() > 0
+                        was_active = True
 
-
-                        assert pc.send_disconnect() >  0
                 #
                 # Check how core methods are called
                 #
@@ -547,6 +547,112 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
 
                 assert feed_client.n_quotes_upd == 1
                 assert feed_client.n_iinfo_upd == 1
+            except:
+                raise
+            finally:
+                if transport_s:
+                    transport_s.close()
+                if transport_c:
+                    transport_c.close()
+                if transport_s_pub:
+                    transport_s_pub.close()
+                if transport_c_sub:
+                    transport_c_sub.close()
+                free(msg)
+
+
+    def test_protocol_updates_subscription_bits_were_filtered(self):
+        cdef ConnectionState *cstate;
+        cdef ConnectionState *sstate;
+        cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
+        cdef void * transport_data
+        cdef size_t msg_size
+        cdef long dt_prev_call
+        cdef long dt_now
+        was_active = False
+        with zmq.Context() as ctx:
+            transport_s = None
+            transport_c = None
+            transport_c_sub = None
+            transport_s_pub = None
+            try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+
+                transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
+                transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+
+                feed_client = FeedClientMock()
+                feed_server = UHFeedMock()
+
+                #cybreakpoint(1)
+                ps = ProtocolDataFeed(11, transport_s, transport_s_pub, None, feed_server)
+                pc = ProtocolDataFeed(22, transport_c, transport_c_sub, feed_client, None)
+
+                s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
+                c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                s_pub_socket = zmq.Socket.shadow(<uint64_t> transport_s_pub.socket)
+                c_sub_socket = zmq.Socket.shadow(<uint64_t> transport_c_sub.socket)
+                poller = zmq.Poller()
+                poller.register(s_socket, zmq.POLLIN)
+                poller.register(c_socket, zmq.POLLIN)
+                #poller.register(s_pub_socket, zmq.POLLIN)
+                poller.register(c_sub_socket, zmq.POLLIN)
+
+                cstate = pc.get_state(b'')
+                sstate = ps.get_state(b'CLI')
+
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
+
+                dt_prev_call = datetime_nsnow()
+                for i in range(20):
+                    socks = dict(poller.poll(50))
+                    if s_socket in socks and socks[s_socket] == zmq.POLLIN:
+                        transport_data = transport_s.receive(&msg_size)
+                        rc = ps.on_process_new_message(transport_data, msg_size)
+                        transport_s.receive_finalize(transport_data)
+                        assert rc > 0, rc
+                    if c_socket in socks and socks[c_socket] == zmq.POLLIN:
+                        transport_data = transport_c.receive(&msg_size)
+                        rc = pc.on_process_new_message(transport_data, msg_size)
+                        transport_c.receive_finalize(transport_data)
+                        assert rc > 0, rc
+                    if c_sub_socket in socks and socks[c_sub_socket] == zmq.POLLIN:
+                        transport_data = transport_c_sub.receive(&msg_size)
+                        rc = pc.on_process_new_message(transport_data, msg_size)
+                        transport_c_sub.receive_finalize(transport_data)
+                        assert rc > 0, rc
+
+                    dt_now = datetime_nsnow()
+                    if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+                        assert ps.heartbeat(dt_now) >= 0
+                        assert pc.heartbeat(dt_now) >= 0
+
+                        dt_prev_call = dt_now
+
+                    if cstate.status == ProtocolStatus.UHF_ACTIVE and sstate.status == ProtocolStatus.UHF_ACTIVE:
+                        #self.assertGreater(ps.send_source_status(b'SRC1', ProtocolStatus.UHF_ACTIVE), 0)
+                        assert ps.send_feed_update(-1, 1, 2) == PROTOCOL_ERR_ARG_ERR
+                        assert ps.send_feed_update(0, 0, 2) == PROTOCOL_ERR_ARG_ERR
+                        assert ps.send_feed_update(0, 3, 2) == PROTOCOL_ERR_ARG_ERR
+
+                        # settings different subscription bits, it's not an error but the
+                        # quote would not be passed to the client processing
+                        self.assertGreater(ps.send_feed_update(17, 1, 2**11), 0)
+                        self.assertGreater(ps.send_feed_update(17, 2, 2**1), 0)
+                        assert pc.send_disconnect() > 0
+                        was_active = True
+
+                #
+                # Check how core methods are called
+                #
+                assert was_active
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
+
+                assert feed_client.n_quotes_upd == 0
+                assert feed_client.n_iinfo_upd == 0
             except:
                 raise
             finally:
@@ -589,9 +695,16 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                 msg.instrument_index = 0
                 msg.update_type = 1
                 msg.header.protocol_id = b'T'
+                msg.subscriptions_bits = 2**22
                 assert pc.on_process_new_message(msg, sizeof(ProtocolDFUpdateMessage) - 1) == 0
 
                 msg.header.protocol_id = ps.protocol_id
+
+                # Subscription is filtered
+                msg.subscriptions_bits = 0
+                assert pc.on_process_new_message(msg, sizeof(ProtocolDFUpdateMessage)) == 10000
+
+                msg.subscriptions_bits = 2 ** 22
                 assert pc.on_process_new_message(msg, sizeof(ProtocolDFUpdateMessage)-1) == PROTOCOL_ERR_SIZE
 
                 msg.header.client_life_id = 0

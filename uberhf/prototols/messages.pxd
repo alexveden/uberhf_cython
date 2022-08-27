@@ -55,6 +55,7 @@ ctypedef struct ProtocolDFUpdateMessage:
     TransportHeader header
     uint64_t instrument_id
     int instrument_index
+    uint64_t subscriptions_bits
     int update_type
 
 ctypedef struct ProtocolDFStatusMessage:

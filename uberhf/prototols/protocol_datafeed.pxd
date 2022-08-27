@@ -11,6 +11,7 @@ from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuot
 
 
 cdef class ProtocolDataFeed(ProtocolBase):
+    cdef int module_subs_id
     cdef FeedClientAbstract feed_client
     cdef UHFeedAbstract feed_server
     cdef Transport pubsub_transport
@@ -23,6 +24,6 @@ cdef class ProtocolDataFeed(ProtocolBase):
 
     # From server to client via pub-sub
     cdef int send_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil
-    cdef int send_feed_update(self, int instrument_index, int update_type) nogil
+    cdef int send_feed_update(self, int instrument_index, int update_type, uint64_t subscriptions_bits) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil

@@ -604,7 +604,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         self.assertEqual(qc.feed_on_subscribe(b'RU.F.RTS', <uint64_t>HUGE_VAL, 0), -2)
         self.assertEqual(qc.feed_on_subscribe(b'RU.F.RTS', 10**8*41, 0), -3)
 
-        cdef int qi
+        cdef int qi, i
         cdef QCRecord * q = &qc.records[0]
         assert q.subscriptions_bits == 0
 
@@ -614,8 +614,17 @@ class CyQuotesCacheTestCase(unittest.TestCase):
             assert q.subscriptions_bits != 0
             self.assertEqual(q.subscriptions_bits, 2**i, f'i={i} 2**i={2**i}')
 
+            # Testing bit
+            assert (q.subscriptions_bits >> i) & 1UL == 1
+
             assert qc.feed_on_subscribe(b'RU.F.RTS', gen_lifetime_id(i), 0) == 0
             assert q.subscriptions_bits == 0
+
+            # Testing if bit set
+            assert (q.subscriptions_bits >> i) & 1UL == 0
+
+
+
 
 
 

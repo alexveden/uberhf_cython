@@ -42,6 +42,7 @@ cdef class ProtocolDataFeed(ProtocolBase):
         # Calling super() class in Cython must be by static
         ProtocolBase.protocol_initialize(self, PROTOCOL_ID_DATAFEED, is_server, module_id, transport, heartbeat_interval_sec)
         self.pubsub_transport = transport_pubsub
+        self.module_subs_id = <int>module_id
 
     cdef int send_subscribe(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0)  # Only clients allowed
@@ -87,7 +88,7 @@ cdef class ProtocolDataFeed(ProtocolBase):
         msg_out.quote_status = quotes_status
         return self.pubsub_transport.send(NULL, msg_out, sizeof(ProtocolDFStatusMessage), no_copy=1)
 
-    cdef int send_feed_update(self, int instrument_index, int update_type) nogil:
+    cdef int send_feed_update(self, int instrument_index, int update_type, uint64_t subscriptions_bits) nogil:
         if not (update_type >= 1 and update_type <= 2):
             return PROTOCOL_ERR_ARG_ERR
         if instrument_index < 0:
@@ -100,6 +101,7 @@ cdef class ProtocolDataFeed(ProtocolBase):
         msg_out.header.client_life_id = TRANSPORT_HDR_MGC  # We are using PUB socket, broadcast to all!
         msg_out.instrument_index = instrument_index
         msg_out.update_type = update_type
+        msg_out.subscriptions_bits = subscriptions_bits
 
         return self.pubsub_transport.send(NULL, msg_out, sizeof(ProtocolDFUpdateMessage), no_copy=1)
 
@@ -124,6 +126,10 @@ cdef class ProtocolDataFeed(ProtocolBase):
             msg_upd = <ProtocolDFUpdateMessage *> msg
             if msg_upd.header.client_life_id != TRANSPORT_HDR_MGC:
                 return PROTOCOL_ERR_LIFE_ID
+
+            if (msg_upd.subscriptions_bits >> self.module_subs_id) & 1UL == 0:
+                # Not subscribed for this message
+                return 10000
 
             if msg_upd.update_type == 1:
                 self.feed_client.feed_on_quote(msg_upd.instrument_index)
