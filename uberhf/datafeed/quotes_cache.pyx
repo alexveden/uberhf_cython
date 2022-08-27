@@ -2,6 +2,7 @@ from posix.fcntl cimport open, O_RDONLY, O_CREAT, O_EXCL, O_RDWR
 from posix.unistd cimport close, read, off_t, ftruncate
 from posix.mman cimport mmap, munmap, shm_open, shm_unlink, PROT_READ, PROT_WRITE, MAP_SHARED, MAP_FAILED
 from posix.stat cimport struct_stat, fstat, S_IRWXU
+from libc.limits cimport UINT_MAX
 from posix.types cimport off_t, mode_t
 from libc.errno cimport errno, ENOENT
 from libc.string cimport strerror, memset
@@ -164,7 +165,7 @@ cdef class SharedQuotesCache:
                         SharedQuotesCache.reset_quote(&q.quote)
 
         cyassert(self.header.source_count == n_valid_sources)
-        cyassert(self.header.source_count == self.source_map.count())
+        cyassert(<size_t>self.header.source_count == self.source_map.count())
 
     cdef void _reload_quotes(self) nogil:
         cdef Name2Idx nidx
@@ -180,7 +181,7 @@ cdef class SharedQuotesCache:
             self.ticker_map.set(&nidx)
 
         cyassert(self.header.quote_count == n_valid_quotes)
-        cyassert(self.header.quote_count == self.ticker_map.count())
+        cyassert(<size_t>self.header.quote_count == self.ticker_map.count())
 
     @staticmethod
     cdef size_t calc_shmem_size(int source_capacity, int quotes_capacity):
@@ -208,9 +209,9 @@ cdef class SharedQuotesCache:
         :return: 
         """
         cyassert(self.is_server)
-        cyassert(self.source_map.count() == self.header.source_count)
+        cyassert(self.source_map.count() == <size_t>self.header.source_count)
 
-        if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE-1:
+        if not is_str_valid(data_src_id, TRANSPORT_SENDER_SIZE):
             self.header.source_errors += 1
             return -1
         if data_source_life_id == 0:
@@ -256,7 +257,7 @@ cdef class SharedQuotesCache:
         src_h.quote_errors = 0
         src_h.source_errors = 0
 
-        cyassert(self.header.source_count == self.source_map.count())
+        cyassert(<size_t>self.header.source_count == self.source_map.count())
         return src_i
 
     cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo iinfo) nogil:
@@ -271,12 +272,13 @@ cdef class SharedQuotesCache:
         :return: negative if error, >= 0 as quote index of the new instrument 
         """
         cyassert(self.is_server)
-        cyassert(self.ticker_map.count() == self.header.quote_count)
+        cyassert(self.ticker_map.count() == <size_t>self.header.quote_count)
 
-        if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE-1:
+        if not is_str_valid(data_src_id, TRANSPORT_SENDER_SIZE):
             self.header.source_errors += 1
             return -1
-        if v2_ticker == NULL or strlen(v2_ticker) == 0 or strlen(v2_ticker) > V2_TICKER_MAX_LEN-1:
+
+        if not is_str_valid(v2_ticker, V2_TICKER_MAX_LEN):
             self.header.source_errors += 1
             return -2
         if instrument_id == 0:
@@ -317,6 +319,7 @@ cdef class SharedQuotesCache:
             strlcpy(q.data_source_id, data_src_id, TRANSPORT_SENDER_SIZE)
             q.instrument_id = instrument_id
             q.magic_number = TRANSPORT_HDR_MGC
+            q.subscriptions_bits = 0
         else:
             q_idx = instrument_idx.idx
             q = &self.records[q_idx]
@@ -337,7 +340,7 @@ cdef class SharedQuotesCache:
         SharedQuotesCache.reset_quote(&q.quote)
         src_h.instruments_registered += 1
 
-        cyassert(self.header.quote_count == self.ticker_map.count())
+        cyassert(<size_t>self.header.quote_count == self.ticker_map.count())
         return q_idx
 
 
@@ -351,7 +354,7 @@ cdef class SharedQuotesCache:
         """
         cyassert(self.is_server)
 
-        if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE - 1:
+        if not is_str_valid(data_src_id, TRANSPORT_SENDER_SIZE):
             self.header.source_errors += 1
             return -1
 
@@ -381,7 +384,7 @@ cdef class SharedQuotesCache:
         """
         cyassert(self.is_server)
 
-        if data_src_id == NULL or strlen(data_src_id) == 0 or strlen(data_src_id) > TRANSPORT_SENDER_SIZE - 1:
+        if not is_str_valid(data_src_id, TRANSPORT_SENDER_SIZE):
             self.header.source_errors += 1
             return -1
 
@@ -448,13 +451,45 @@ cdef class SharedQuotesCache:
 
         return msg.instrument_index
 
+    cdef int feed_on_subscribe(self, char * v2_ticker, uint64_t client_life_id, bint is_subscribe) nogil:
+        cyassert(self.is_server == 1)
+
+        if not is_str_valid(v2_ticker, V2_TICKER_MAX_LEN):
+            return -1
+
+        if client_life_id < 10UL**8UL or client_life_id > UINT_MAX:
+            return -2
+
+        cdef uint64_t module_id = <int>(client_life_id / 10**8)
+
+        #
+        if module_id <= 0 or module_id > 40:
+            return -3
+
+        cdef Name2Idx * tckr_idx = <Name2Idx *> self.ticker_map.get(v2_ticker)
+        if tckr_idx == NULL:
+            return -4
+
+        cdef QCRecord * qr = &self.records[tckr_idx.idx]
+
+        if is_subscribe:
+            qr.subscriptions_bits |= 1UL << module_id
+        else:
+            qr.subscriptions_bits &= ~(1UL << module_id)
+        #cybreakpoint(1)
+
+        return tckr_idx.idx
+
+
+
+
     cdef QCRecord * get(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0) # Only for clients!
 
-        if v2_ticker == NULL:
+        if not is_str_valid(v2_ticker, V2_TICKER_MAX_LEN):
             return NULL
         
-        if self.header.quote_count != self.ticker_map.count():
+        if <size_t>self.header.quote_count != self.ticker_map.count():
             self._reload_quotes()
 
         cdef Name2Idx * tckr_idx = <Name2Idx*>self.ticker_map.get(v2_ticker)
@@ -469,7 +504,7 @@ cdef class SharedQuotesCache:
         if data_source_id == NULL:
             return NULL
 
-        if self.header.source_count != self.source_map.count():
+        if <size_t>self.header.source_count != self.source_map.count():
             self._reload_sources_or_srvreset()
 
         cdef Name2Idx * src_idx = <Name2Idx *> self.source_map.get(data_source_id)

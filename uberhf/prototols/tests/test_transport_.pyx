@@ -90,7 +90,7 @@ class CyTransportTestCase(unittest.TestCase):
             transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
             try:
                 msg.data = 777
-                transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                transport_c.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False)
                 # Change of this value must not affect the received value
                 msg.data = 888
 
@@ -850,6 +850,30 @@ class CyTransportTestCase(unittest.TestCase):
             try:
                 msg.data = 777
                 result = transport_s.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                assert transport_s.msg_sent == 0
+                assert transport_s.msg_received == 0
+                assert transport_s.msg_errors == 1
+                assert result == TRANSPORT_ERR_NULL_DEALERID
+                assert transport_s.get_last_error() == TRANSPORT_ERR_NULL_DEALERID
+                assert transport_s.get_last_error_str(TRANSPORT_ERR_NULL_DEALERID) == b"Dealer ID is mandatory for ZMQ_ROUTER.send()"
+            except:
+                raise
+            finally:
+                transport_s.close()
+
+    def test_server_send_topic_empty_is_mandatory(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+            #transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            try:
+                msg.data = 777
+                result = transport_s.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False)
                 assert transport_s.msg_sent == 0
                 assert transport_s.msg_received == 0
                 assert transport_s.msg_errors == 1

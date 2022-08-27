@@ -33,6 +33,7 @@ ctypedef struct QCRecord:
     uint64_t instrument_id
     char data_source_id[TRANSPORT_SENDER_SIZE]
     int data_source_hidx
+    uint64_t subscriptions_bits
     Quote quote
     InstrumentInfo iinfo
     int magic_number
@@ -40,6 +41,12 @@ ctypedef struct QCRecord:
 ctypedef struct Name2Idx:
     char name[V2_TICKER_MAX_LEN]
     int idx
+
+cdef inline bint is_str_valid(char * s, size_t max_buf_size) nogil:
+    if s == NULL:
+        return 0
+    cdef size_t _slen = strlen(s)
+    return _slen > 0 and _slen < max_buf_size
 
 
 cdef class SharedQuotesCache:
@@ -62,6 +69,8 @@ cdef class SharedQuotesCache:
     cdef int source_activate(self, char * data_src_id) nogil
     cdef int source_disconnect(self, char * data_src_id) nogil
     cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
+
+    cdef int feed_on_subscribe(self, char * v2_ticker, uint64_t client_life_id, bint is_subscribe) nogil
 
     cdef QCRecord * get(self, char * v2_ticker) nogil
     cdef QCSourceHeader * get_source(self, char * data_source_id) nogil

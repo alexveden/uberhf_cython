@@ -1,4 +1,5 @@
 import time
+from libc.stdint cimport uint64_t, uint16_t
 from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy, memcmp
 import unittest
@@ -9,7 +10,7 @@ from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
-from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
+from uberhf.includes.utils cimport gen_lifetime_id
 from uberhf.datafeed.quotes_cache cimport SharedQuotesCache, QCRecord, QCSourceHeader
 from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
 from posix.mman cimport shm_unlink
@@ -94,12 +95,13 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
 
-        cdef QCRecord q = qc.records[0]
+        cdef QCRecord * q = &qc.records[0]
         assert q.v2_ticker == b'RU.F.RTS'
         assert q.data_source_id == b'12345'
         assert q.instrument_id == 123
         assert q.data_source_hidx == 0
         assert q.magic_number == TRANSPORT_HDR_MGC
+        assert q.subscriptions_bits == 0
 
         assert q.iinfo.tick_size == iinfo.tick_size
         assert q.iinfo.min_lot_size == iinfo.min_lot_size
@@ -113,6 +115,8 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert isnan(q.quote.ask_size)
         assert q.quote.last_upd_utc == 0
 
+        q.subscriptions_bits = 1
+        assert qc.records[0].subscriptions_bits == 1
 
         iinfo.tick_size = 100
         iinfo.min_lot_size = 50
@@ -122,13 +126,17 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.usd_point_value = 1
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
 
-        q = qc.records[0]
+        q = &qc.records[0]
         assert q.v2_ticker == b'RU.F.RTS'
         assert q.data_source_id == b'12345'
         assert q.instrument_id == 123
         assert q.data_source_hidx == 0
         assert q.magic_number == TRANSPORT_HDR_MGC
 
+        # New registration of the same instrument doesn't rewrite subscriptions
+        assert q.subscriptions_bits == 1, q.subscriptions_bits
+
+        # New registration rewrites instrument info
         assert q.iinfo.tick_size == 100
         assert q.iinfo.min_lot_size == iinfo.min_lot_size
         assert q.iinfo.margin_req == iinfo.margin_req
@@ -568,9 +576,47 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert isnan(qr.quote.bid)
 
     def test_client_early_connect(self):
+        shm_unlink(b'/uhfeed_shared_cache')
         self.assertRaises(FileNotFoundError, SharedQuotesCache, 0, 0, 0)
         qs = SharedQuotesCache(1234, 5, 3)
         qc = SharedQuotesCache(0, 0, 0)
+
+    def test_source_subscribe(self):
+        qc = SharedQuotesCache(1234, 5, 3)
+
+        cdef InstrumentInfo iinfo
+        iinfo.tick_size = 10
+        iinfo.min_lot_size = 5
+        iinfo.margin_req = 100
+        iinfo.theo_price = 200
+        iinfo.price_scale = 2
+        iinfo.usd_point_value = 1
+
+        assert qc.source_initialize(b'12345', 12345) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_activate(b'12345') == 0
+        assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ACTIVE
+
+        assert qc.feed_on_subscribe(NULL, 0, 0) == -1
+        assert qc.feed_on_subscribe(b'RU.F.RTS', 0, 0) == -2
+        assert qc.feed_on_subscribe(b'RU.F.RTS', <unsigned int>(gen_lifetime_id(1)/10), 0) == -2
+        assert qc.feed_on_subscribe(b'RU.F.SI', gen_lifetime_id(1), 0) == -4
+        self.assertEqual(qc.feed_on_subscribe(b'RU.F.RTS', <uint64_t>HUGE_VAL, 0), -2)
+        self.assertEqual(qc.feed_on_subscribe(b'RU.F.RTS', 10**8*41, 0), -3)
+
+        cdef int qi
+        cdef QCRecord * q = &qc.records[0]
+        assert q.subscriptions_bits == 0
+
+        for i in range(1, 40):
+            assert qc.feed_on_subscribe(b'RU.F.RTS', gen_lifetime_id(i), 1) == 0
+
+            assert q.subscriptions_bits != 0
+            self.assertEqual(q.subscriptions_bits, 2**i, f'i={i} 2**i={2**i}')
+
+            assert qc.feed_on_subscribe(b'RU.F.RTS', gen_lifetime_id(i), 0) == 0
+            assert q.subscriptions_bits == 0
+
 
 
 

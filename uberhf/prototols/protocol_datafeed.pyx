@@ -45,24 +45,23 @@ cdef class ProtocolDataFeed(ProtocolBase):
 
     cdef int send_subscribe(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0)  # Only clients allowed
-        return self._send_subscribe(v2_ticker, -1, 1)
+        return self._send_subscribe(b'', v2_ticker, -1, 1)
 
     cdef int send_unsubscribe(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0)  # Only clients allowed
-        return self._send_subscribe(v2_ticker, -1, 0)
+        return self._send_subscribe(b'', v2_ticker, -1, 0)
 
-    cdef int send_subscribe_confirm(self, char * v2_ticker, int instrument_index, bint is_subscribe) nogil:
-        cyassert(self.is_server == 1)  # Only servers allowed
-        return self._send_subscribe(v2_ticker, instrument_index, is_subscribe)
+    cdef int _send_subscribe(self, char * sender_id, char * v2_ticker, int instrument_index, bint is_subscribe) nogil:
+        if v2_ticker == NULL:
+            return PROTOCOL_ERR_ARG_ERR
 
-    cdef int _send_subscribe(self, char * v2_ticker, int instrument_index, bint is_subscribe) nogil:
-        cdef ConnectionState * cstate = self.get_state(b'')
+        cdef size_t _slen = strlen(v2_ticker)
+        if _slen == 0 or _slen > V2_TICKER_MAX_LEN - 1:
+            return PROTOCOL_ERR_ARG_ERR
 
+        cdef ConnectionState * cstate = self.get_state(sender_id)
         if cstate.status != ProtocolStatus.UHF_ACTIVE:
             return PROTOCOL_ERR_WRONG_ORDER
-
-        if v2_ticker == NULL or strlen(v2_ticker) > V2_TICKER_MAX_LEN - 1:
-            return PROTOCOL_ERR_ARG_ERR
 
         cdef ProtocolDFSubscribeMessage *msg_out = <ProtocolDFSubscribeMessage *> malloc(sizeof(ProtocolDFSubscribeMessage))
         msg_out.header.protocol_id = self.protocol_id
@@ -74,7 +73,7 @@ cdef class ProtocolDataFeed(ProtocolBase):
         msg_out.is_subscribe = is_subscribe
         msg_out.instrument_index = instrument_index
 
-        return self.transport.send(NULL, msg_out, sizeof(ProtocolDFSubscribeMessage), no_copy=1)
+        return self.transport.send(sender_id, msg_out, sizeof(ProtocolDFSubscribeMessage), no_copy=1)
 
     # From server to client via pub-sub
     cdef int send_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil:
@@ -101,20 +100,16 @@ cdef class ProtocolDataFeed(ProtocolBase):
             if self.is_server:
                 rc = self.feed_server.feed_on_subscribe(msg_sub.v2_ticker, msg_sub.header.client_life_id, msg_sub.is_subscribe)
 
-                return self.send_subscribe_confirm(msg_sub.v2_ticker,
-                                                   rc,
-                                                   msg_sub.is_subscribe,
-                                                   )
+                return self._send_subscribe(msg_sub.header.sender_id,
+                                            msg_sub.v2_ticker,
+                                            rc,
+                                            msg_sub.is_subscribe,)
             else:
                 self.feed_client.feed_on_subscribe_confirm(msg_sub.v2_ticker,
                                                            msg_sub.instrument_index,
                                                            msg_sub.is_subscribe,
                                                            )
                 return 1
-
-        # elif hdr.msg_type == MSGT_IINFO:
-        #     cyassert(0)
-
         else:
             rc = ProtocolBase.on_process_new_message(self, msg, msg_size)
             cyassert(rc != 0)

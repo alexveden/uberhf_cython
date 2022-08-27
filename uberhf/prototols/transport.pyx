@@ -204,10 +204,10 @@ cdef class Transport:
             return self._send_set_error(TRANSPORT_ERR_BAD_SIZE, data if no_copy else NULL)
 
         # Sending dealer ID for ZMQ_ROUTER is mandatory!
-        if self.socket_type == ZMQ_ROUTER and topic_or_dealer == NULL:
+        if self.socket_type == ZMQ_ROUTER and (topic_or_dealer == NULL or topic_or_dealer[0] == b'\0'):
             return self._send_set_error(TRANSPORT_ERR_NULL_DEALERID, data if no_copy else NULL)
 
-        if topic_or_dealer != NULL:
+        if topic_or_dealer != NULL and topic_or_dealer[0] != b'\0':
             rc = zmq_send(self.socket, topic_or_dealer, strlen(topic_or_dealer), ZMQ_SNDMORE)
 
             if rc == -1:
