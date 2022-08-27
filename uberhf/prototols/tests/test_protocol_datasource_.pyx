@@ -305,6 +305,11 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 assert pc.on_process_new_message(msg, sizeof(ProtocolDSRegisterMessage)-1) == PROTOCOL_ERR_SIZE
 
 
+                msg.header.protocol_id = b'S'
+                msg.header.msg_type = b'q'
+                assert pc.on_process_new_message(msg, sizeof(ProtocolDSQuoteMessage)-1) == PROTOCOL_ERR_SIZE
+
+
             except:
                 raise
             finally:

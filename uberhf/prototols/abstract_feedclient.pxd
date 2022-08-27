@@ -11,6 +11,6 @@ cdef class FeedClientAbstract:
     cdef void feed_on_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil
 
     # Subscribed updates
-    cdef void feed_on_quote(self, int instrument_index, uint64_t instrument_id) nogil
+    cdef void feed_on_quote(self, int instrument_index) nogil
 
-    cdef void feed_on_instrumentinfo(self, int instrument_index, uint64_t instrument_id) nogil
+    cdef void feed_on_instrumentinfo(self, int instrument_index) nogil

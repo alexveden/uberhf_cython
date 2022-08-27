@@ -14,8 +14,8 @@ cdef class FeedClientAbstract:
         return
 
     # Subscribed updates
-    cdef void feed_on_quote(self, int instrument_index, uint64_t instrument_id) nogil:
+    cdef void feed_on_quote(self, int instrument_index) nogil:
         return
 
-    cdef void feed_on_instrumentinfo(self, int instrument_index, uint64_t instrument_id) nogil:
+    cdef void feed_on_instrumentinfo(self, int instrument_index) nogil:
         return

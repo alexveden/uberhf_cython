@@ -23,6 +23,6 @@ cdef class ProtocolDataFeed(ProtocolBase):
 
     # From server to client via pub-sub
     cdef int send_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil
-    cdef int send_feed_update(self, int instrument_index, uint64_t instrument_id, int update_type) nogil
+    cdef int send_feed_update(self, int instrument_index, int update_type) nogil
 
     cdef int on_process_new_message(self, void * msg, size_t msg_size) nogil

@@ -17,10 +17,7 @@ cdef inline bint is_str_valid(char * s, size_t max_buf_size) nogil:
     :param max_buf_size: buffer for a string 
     :return: 
     """
-    if s == NULL:
-        return 0
-    cdef size_t _slen = strlen(s)
-    return _slen > 0 and _slen < max_buf_size
+    return s != NULL and s[0] != b'\0' and strlen(s) < max_buf_size
 
 cdef extern from "utils.h"  nogil:
     const double TIMEDELTA_NANO
