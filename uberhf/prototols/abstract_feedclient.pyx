@@ -6,7 +6,7 @@ cdef class FeedClientAbstract:
         raise NotImplementedError(f'You must implement this method in child class')
 
     # Server confirms subscription / unsubscription
-    cdef void feed_on_subscribe_confirm(self, char * v2_ticker, uint64_t instrument_id, int retcode) nogil:
+    cdef void feed_on_subscribe_confirm(self, char * v2_ticker, int instrument_index, bint is_subscribe) nogil:
         return
 
     # Server reports the datasource status has changed

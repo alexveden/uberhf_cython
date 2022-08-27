@@ -48,6 +48,7 @@ ctypedef struct ProtocolDFSubscribeMessage:
     TransportHeader header
     char v2_ticker[V2_TICKER_MAX_LEN]
     bint is_subscribe
+    int instrument_index
 
 ctypedef struct ProtocolDFUpdateMessage:
     TransportHeader header

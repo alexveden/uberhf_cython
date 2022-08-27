@@ -66,7 +66,7 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
         cdef size_t msg_size
         cdef long dt_prev_call
         cdef long dt_now
-
+        was_active = False
         with zmq.Context() as ctx:
             transport_s = None
             transport_c = None
@@ -129,11 +129,12 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                         dt_prev_call = dt_now
 
                     if cstate.status == ProtocolStatus.UHF_ACTIVE and sstate.status == ProtocolStatus.UHF_ACTIVE:
+                        was_active = True
                         assert pc.send_disconnect() >  0
                 #
                 # Check how core methods are called
                 #
-
+                assert was_active
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
             except:

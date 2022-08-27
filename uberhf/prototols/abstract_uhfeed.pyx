@@ -47,3 +47,6 @@ cdef class UHFeedAbstract:
         :return: 
         """
         return
+
+    cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil:
+        return -1

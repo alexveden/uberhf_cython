@@ -18,7 +18,9 @@ cdef class ProtocolDataFeed(ProtocolBase):
     # From client to server via dealer - router
     cdef int send_subscribe(self, char * v2_ticker) nogil
     cdef int send_unsubscribe(self, char * v2_ticker) nogil
-    cdef int send_subscribe_confirm(self, char * v2_ticker, uint64_t instrument_id, int retcode) nogil
+    cdef int send_subscribe_confirm(self, char * v2_ticker, int instrument_index, bint is_subscribe) nogil
+
+    cdef int _send_subscribe(self, char * v2_ticker, int instrument_index, bint is_subscribe) nogil
 
     # From server to client via pub-sub
     cdef int send_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil
