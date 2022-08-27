@@ -44,3 +44,18 @@ ctypedef struct ProtocolDSQuoteMessage:
     bint is_snapshot
     Quote quote
 
+ctypedef struct ProtocolDFSubscribeMessage:
+    TransportHeader header
+    char v2_ticker[V2_TICKER_MAX_LEN]
+    bint is_subscribe
+
+ctypedef struct ProtocolDFUpdateMessage:
+    TransportHeader header
+    uint64_t instrument_id
+    int instrument_index
+    int update_type
+
+ctypedef struct ProtocolDFStatusMessage:
+    TransportHeader header
+    char data_source_id[TRANSPORT_SENDER_SIZE]
+    ProtocolStatus quote_status

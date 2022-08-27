@@ -27,6 +27,7 @@ cdef extern from "uhfprotocols.h"  nogil:
     const char PROTOCOL_ID_TEST
     const char PROTOCOL_ID_DATASOURCE
     const char PROTOCOL_ID_BASE
+    const char PROTOCOL_ID_DATAFEED
 
     #
     # Error codes

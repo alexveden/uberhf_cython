@@ -537,6 +537,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         qs2 = SharedQuotesCache(7907, 5, 3)
         assert qc.mmap_data != qs2.mmap_data
         assert qs2.mmap_size == qc.mmap_size
+        assert qc.shmem_fd != qs2.shmem_fd
         assert memcmp(qc.mmap_data, qs2.mmap_data, qs2.mmap_size) == 0
 
         assert qc.header.source_count == 1

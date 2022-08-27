@@ -480,6 +480,10 @@ cdef class SharedQuotesCache:
         return &self.sources[src_idx.idx]
 
     cdef close(self):
+        # TODO: decide - unlink doesn't keep memopy for open client
+        #if self.is_server:
+        #    shm_unlink(SHARED_FN)
+
         if self.is_server:
             if self.mmap_data != NULL:
                 # Setting all sources as inactive and closing
@@ -492,8 +496,7 @@ cdef class SharedQuotesCache:
         if self.shmem_fd != -1:
             close(self.shmem_fd)
 
-        #if self.is_server:
-        #    shm_unlink(SHARED_FN)
+
 
         if self.lock_fd != -1:
             close(self.lock_fd)
