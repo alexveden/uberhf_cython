@@ -42,12 +42,6 @@ ctypedef struct Name2Idx:
     char name[V2_TICKER_MAX_LEN]
     int idx
 
-cdef inline bint is_str_valid(char * s, size_t max_buf_size) nogil:
-    if s == NULL:
-        return 0
-    cdef size_t _slen = strlen(s)
-    return _slen > 0 and _slen < max_buf_size
-
 
 cdef class SharedQuotesCache:
     cdef bint is_server

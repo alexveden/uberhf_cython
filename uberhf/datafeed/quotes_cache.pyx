@@ -10,7 +10,7 @@ from libc.stdlib cimport malloc, free
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE, V2_TICKER_MAX_LEN, ProtocolStatus, TRANSPORT_HDR_MGC
 from uberhf.includes.hashmap cimport HashMap
-from uberhf.includes.utils cimport strlcpy
+from uberhf.includes.utils cimport strlcpy, is_str_valid
 from libc.math cimport NAN, HUGE_VAL
 from libc.limits cimport LONG_MAX
 import fcntl

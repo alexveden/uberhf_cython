@@ -2,12 +2,25 @@
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME, CLOCK_MONOTONIC
 from .asserts cimport cyassert
 from posix.time cimport timespec, nanosleep
-from libc.time cimport time, tm, localtime, time_t
+from libc.string cimport strlen
 
 cdef extern from "safestr.h"  nogil:
     size_t safe_strcpy "strlcpy"(char *dst, const char *src, size_t dsize)
 
 cdef size_t strlcpy(char * dst, const char * src, size_t  dsize) nogil
+
+cdef inline bint is_str_valid(char * s, size_t max_buf_size) nogil:
+    """
+    Checks if char* is not NULL, non zero-len, and fits max_buf_size (including \0 char)
+    
+    :param s: string 
+    :param max_buf_size: buffer for a string 
+    :return: 
+    """
+    if s == NULL:
+        return 0
+    cdef size_t _slen = strlen(s)
+    return _slen > 0 and _slen < max_buf_size
 
 cdef extern from "utils.h"  nogil:
     const double TIMEDELTA_NANO

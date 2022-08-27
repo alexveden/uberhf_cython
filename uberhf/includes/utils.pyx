@@ -2,6 +2,7 @@
 from libc.stdlib cimport rand, srand, RAND_MAX
 cimport cython
 from .asserts cimport cyassert
+from libc.time cimport tm, localtime
 
 cdef size_t strlcpy(char * dst, const char * src, size_t  dsize) nogil:
     """

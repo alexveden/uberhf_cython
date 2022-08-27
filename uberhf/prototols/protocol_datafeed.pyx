@@ -8,7 +8,7 @@ from uberhf.prototols.protocol_base cimport ProtocolBase, ConnectionState
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.messages cimport ProtocolDFSubscribeMessage
 from uberhf.prototols.libzmq cimport *
-from uberhf.includes.utils cimport strlcpy
+from uberhf.includes.utils cimport strlcpy, is_str_valid
 
 DEF MSGT_SUBS = b's'
 DEF MSGT_UPDATE = b'u'
@@ -52,11 +52,7 @@ cdef class ProtocolDataFeed(ProtocolBase):
         return self._send_subscribe(b'', v2_ticker, -1, 0)
 
     cdef int _send_subscribe(self, char * sender_id, char * v2_ticker, int instrument_index, bint is_subscribe) nogil:
-        if v2_ticker == NULL:
-            return PROTOCOL_ERR_ARG_ERR
-
-        cdef size_t _slen = strlen(v2_ticker)
-        if _slen == 0 or _slen > V2_TICKER_MAX_LEN - 1:
+        if not is_str_valid(v2_ticker, V2_TICKER_MAX_LEN):
             return PROTOCOL_ERR_ARG_ERR
 
         cdef ConnectionState * cstate = self.get_state(sender_id)
