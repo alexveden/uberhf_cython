@@ -10,7 +10,7 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSourceBase
-from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
@@ -19,6 +19,14 @@ from uberhf.includes.hashmap cimport HashMap
 from unittest.mock import MagicMock
 URL_BIND = b'tcp://*:7100'
 URL_CONNECT = b'tcp://localhost:7100'
+
+cdef InstrumentInfo global_iinfo
+global_iinfo.tick_size = 10
+global_iinfo.min_lot_size = 5
+global_iinfo.margin_req = 100
+global_iinfo.theo_price = 200
+global_iinfo.price_scale = 2
+global_iinfo.usd_point_value = 1
 
 cdef class UHFeedMock(UHFeedAbstract):
     cdef ProtocolDataSourceBase protocol
@@ -59,7 +67,8 @@ cdef class UHFeedMock(UHFeedAbstract):
         cyassert(strcmp(source_id, b'CLI') == 0)
         self.on_disconnect_ncalls += 1
 
-    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id) nogil:
+
+    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
         cyassert(strcmp(source_id, b'CLI') == 0)
 
         if instrument_id == 4567:
@@ -69,6 +78,7 @@ cdef class UHFeedMock(UHFeedAbstract):
         else:
             cyassert(strcmp(v2_ticker, b'RU.F.RTS') == 0)
             cyassert(instrument_id == 1234)
+            cyassert(iinfo.theo_price == 200)
 
             self.on_register_n_ok += 1
             self.hm_tickers.set(v2_ticker)
@@ -109,11 +119,11 @@ cdef class DataSourceMock(DatasourceAbstract):
 
     cdef void source_on_initialize(self) nogil:
         self.on_initialize_ncalls += 1
-        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 1234) > 0)
-        cyassert(self.protocol.send_register_instrument(b'RU.F.Si', 4567) > 0)
-        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 1234) > 0)
-        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 0) == PROTOCOL_ERR_ARG_ERR)
-        cyassert(self.protocol.send_register_instrument(b'RU.F.sldfjasldfjslakjflksajflkjasfljsadldkfjsadlkfjswalkjflaskdjflksadjfdRTS', 22) == PROTOCOL_ERR_ARG_ERR)
+        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 1234, &global_iinfo) > 0)
+        cyassert(self.protocol.send_register_instrument(b'RU.F.Si', 4567, &global_iinfo) > 0)
+        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 1234, &global_iinfo) > 0)
+        cyassert(self.protocol.send_register_instrument(b'RU.F.RTS', 0, &global_iinfo) == PROTOCOL_ERR_ARG_ERR)
+        cyassert(self.protocol.send_register_instrument(b'RU.F.sldfjasldfjslakjflksajflkjasfljsadldkfjsadlkfjswalkjflaskdjflksadjfdRTS', 22, &global_iinfo) == PROTOCOL_ERR_ARG_ERR)
 
     cdef void source_on_disconnect(self) nogil:
         self.on_disconnect_ncalls += 1
@@ -195,7 +205,7 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 ps = ProtocolDataSourceBase(11, transport_s, None, feed)
                 pc = ProtocolDataSourceBase(22, transport_c, source, None)
 
-                assert pc.send_register_instrument(b'TEST', 111) == PROTOCOL_ERR_WRONG_ORDER
+                assert pc.send_register_instrument(b'TEST', 111, &global_iinfo) == PROTOCOL_ERR_WRONG_ORDER
 
                 s_socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
                 c_socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)

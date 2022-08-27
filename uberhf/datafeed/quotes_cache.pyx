@@ -260,7 +260,7 @@ cdef class SharedQuotesCache:
         cyassert(<size_t>self.header.source_count == self.source_map.count())
         return src_i
 
-    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo iinfo) nogil:
+    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
         """
         Data source registers new instrument
         
@@ -336,7 +336,8 @@ cdef class SharedQuotesCache:
                 return -8
 
         q.data_source_hidx = src_idx.idx
-        q.iinfo = iinfo
+        # Dereference and copy!
+        q.iinfo = iinfo[0]
         SharedQuotesCache.reset_quote(&q.quote)
         src_h.instruments_registered += 1
 

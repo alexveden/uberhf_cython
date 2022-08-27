@@ -135,12 +135,13 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     #
     #  PROTOCOL SPECIFIC METHODS
     #
-    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id) nogil:
+    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
         """
         Data source client send registration request for all v2 tickers it's going to source
         
         :param v2_ticker: full qualified v2 ticker  
         :param instrument_id: unique ticker ID for this source
+        :param iinfo: instrument info specification    
         :return: >0 if success, or error
         """
         cyassert( self.is_server == 0) # Only clients allowed
@@ -165,6 +166,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         # These reserved for server reply
         msg_out.error_code = 0
         msg_out.instrument_index = -1
+        msg_out.iinfo = iinfo[0]
         return self.transport.send(NULL, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=1)
 
     cdef int send_new_quote(self, ProtocolDSQuoteMessage* msg, int send_no_copy) nogil:
@@ -195,7 +197,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
 
         if self.is_server:
             # Pass request to the core and redirect the reply to the client
-            rc = self.feed_server.source_on_register_instrument(msg.header.sender_id, msg.v2_ticker, msg.instrument_id)
+            rc = self.feed_server.source_on_register_instrument(msg.header.sender_id, msg.v2_ticker, msg.instrument_id, &msg.iinfo)
 
             msg_out = <ProtocolDSRegisterMessage *> malloc(sizeof(ProtocolDSRegisterMessage))
             msg_out.header.protocol_id = self.protocol_id
@@ -210,9 +212,11 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
                 # Error
                 msg_out.error_code = rc
                 msg_out.instrument_index = -1
+                memset(&msg_out.iinfo, 0, sizeof(InstrumentInfo))
             else:
                 msg_out.error_code = 0  # All good, no error
                 msg_out.instrument_index = rc
+                msg_out.iinfo = msg.iinfo
 
             return self.transport.send(msg.header.sender_id, msg_out, sizeof(ProtocolDSRegisterMessage), no_copy=True)
         else:

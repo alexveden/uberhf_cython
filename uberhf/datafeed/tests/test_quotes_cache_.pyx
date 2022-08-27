@@ -93,7 +93,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.price_scale = 2
         iinfo.usd_point_value = 1
 
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
 
         cdef QCRecord * q = &qc.records[0]
         assert q.v2_ticker == b'RU.F.RTS'
@@ -124,7 +124,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.theo_price = 2000
         iinfo.price_scale = 20
         iinfo.usd_point_value = 1
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
 
         q = &qc.records[0]
         assert q.v2_ticker == b'RU.F.RTS'
@@ -163,15 +163,15 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.usd_point_value = 1
 
         qc = SharedQuotesCache(1234, 5, 2)
-        assert qc.source_register_instrument(NULL, b'RU.F.RTS', 123, iinfo) == -1
-        assert qc.source_register_instrument(b'', b'RU.F.RTS', 123, iinfo) == -1
-        assert qc.source_register_instrument(b'123456', b'RU.F.RTS', 123, iinfo) == -1
+        assert qc.source_register_instrument(NULL, b'RU.F.RTS', 123, &iinfo) == -1
+        assert qc.source_register_instrument(b'', b'RU.F.RTS', 123, &iinfo) == -1
+        assert qc.source_register_instrument(b'123456', b'RU.F.RTS', 123, &iinfo) == -1
 
-        assert qc.source_register_instrument(b'1234', NULL, 123, iinfo) == -2
-        assert qc.source_register_instrument(b'1234', b'', 123, iinfo) == -2
-        assert qc.source_register_instrument(b'1234', b'0123456789012345678901234567890123456789', 123, iinfo) == -2
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 0, iinfo) == -3
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == -4
+        assert qc.source_register_instrument(b'1234', NULL, 123, &iinfo) == -2
+        assert qc.source_register_instrument(b'1234', b'', 123, &iinfo) == -2
+        assert qc.source_register_instrument(b'1234', b'0123456789012345678901234567890123456789', 123, &iinfo) == -2
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 0, &iinfo) == -3
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -4
 
         assert qc.header.source_errors == 8
 
@@ -179,25 +179,25 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.source_initialize(b'1234', 12345) == 1
         cdef QCSourceHeader * src_h = &qc.sources[0]
         src_h.quotes_status = ProtocolStatus.UHF_ACTIVE
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == -5
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
 
         src_h.quotes_status = ProtocolStatus.UHF_INITIALIZING
         src_h.data_source_id[0] = b'8'
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == -5
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
         src_h.data_source_id[0] = b'1'
 
         assert qc.header.source_errors == 10
         assert src_h.source_errors == 2
 
 
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
-        assert qc.source_register_instrument(b'12345', b'RU.F.Si', 1233, iinfo) == 1
-        assert qc.source_register_instrument(b'12345', b'RU.F.SiH9', 1233, iinfo) == -6
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.Si', 1233, &iinfo) == 1
+        assert qc.source_register_instrument(b'12345', b'RU.F.SiH9', 1233, &iinfo) == -6
 
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 1234, iinfo) == -7
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 1234, &iinfo) == -7
         assert src_h.source_errors == 3, int(src_h.source_errors)
 
-        assert qc.source_register_instrument(b'1234', b'RU.F.RTS', 123, iinfo) == -8
+        assert qc.source_register_instrument(b'1234', b'RU.F.RTS', 123, &iinfo) == -8
         assert qc.header.source_errors == 13, qc.header.source_errors
 
         assert qc.sources[0].source_errors == 3
@@ -232,7 +232,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.usd_point_value = 1
 
         assert qc.source_initialize(b'12345', 12345) == 0
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qc.source_activate(b'12345') == 0
         assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ACTIVE
 
@@ -247,7 +247,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.usd_point_value = 1
 
         assert qc.source_initialize(b'12345', 12345) == 0
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qc.source_activate(b'12345') == 0
         assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ACTIVE
         assert qc.source_disconnect(b'12345') == 0
@@ -284,7 +284,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         msg.quote.last_upd_utc = 9999
 
         assert qc.source_initialize(b'12345', 888) == 0
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qc.source_activate(b'12345') == 0
 
         assert qc.source_on_quote(&msg) == 0
@@ -392,7 +392,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qs.mmap_size == qc.mmap_size
 
         assert qs.source_initialize(b'12345', 12345) == 0
-        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qs.source_activate(b'12345') == 0
 
         assert qc.header.quote_count == 1
@@ -428,7 +428,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qs.mmap_size == qc.mmap_size
 
         assert qs.source_initialize(b'12345', 888) == 0
-        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qs.source_activate(b'12345') == 0
 
         assert qc.get(NULL) == NULL
@@ -463,7 +463,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         # Late intialization is also supported
         #
         assert qs.source_initialize(b'777', 12345) == 1
-        assert qs.source_register_instrument(b'777', b'RU.F.Si', 9887, iinfo) == 1
+        assert qs.source_register_instrument(b'777', b'RU.F.Si', 9887, &iinfo) == 1
         assert qs.source_activate(b'777') == 1
 
         cdef QCRecord * qr2 = qc.get(b'RU.F.Si')
@@ -504,7 +504,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert memcmp(qc.mmap_data, qs.mmap_data, qs.mmap_size) == 0
 
         assert qs.source_initialize(b'12345', 888) == 0
-        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qs.source_activate(b'12345') == 0
 
         cdef ProtocolDSQuoteMessage msg
@@ -554,7 +554,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qs2.header.quote_count == 1
 
         self.assertEqual(qs2.source_initialize(b'777', 12345), 1)
-        assert qs2.source_register_instrument(b'777', b'RU.F.Si', 9887, iinfo) == 1
+        assert qs2.source_register_instrument(b'777', b'RU.F.Si', 9887, &iinfo) == 1
         assert qs2.source_activate(b'777') == 1
 
         assert qc.get(b'RU.F.RTS') != NULL
@@ -567,7 +567,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
         # Next initialization
         assert qs2.source_initialize(b'12345', 888) == 0
-        assert qs2.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qs2.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qs2.source_activate(b'12345') == 0
 
         assert qc.get_source(b'12345').quotes_status == ProtocolStatus.UHF_ACTIVE
@@ -593,7 +593,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         iinfo.usd_point_value = 1
 
         assert qc.source_initialize(b'12345', 12345) == 0
-        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, iinfo) == 0
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qc.source_activate(b'12345') == 0
         assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ACTIVE
 

@@ -59,7 +59,7 @@ cdef class SharedQuotesCache:
     cdef QCRecord * records
 
     cdef int source_initialize(self, char * data_src_id, unsigned int data_source_life_id) nogil
-    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo iinfo) nogil
+    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil
     cdef int source_activate(self, char * data_src_id) nogil
     cdef int source_disconnect(self, char * data_src_id) nogil
     cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil

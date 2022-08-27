@@ -56,7 +56,7 @@ cpdef main():
 
     assert qc.source_initialize(b'test', 888) == 0
     for i in range(n_unique_tickers):
-        rc = qc.source_register_instrument(b'test', all_tickers[i] , i+1, iinfo)
+        rc = qc.source_register_instrument(b'test', all_tickers[i] , i+1, &iinfo)
         assert rc >= 0, rc
         assert rc == i, rc
     assert qc.source_activate(b'test') == 0

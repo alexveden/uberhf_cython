@@ -34,6 +34,7 @@ ctypedef struct ProtocolDSRegisterMessage:
     TransportHeader header
     char v2_ticker[V2_TICKER_MAX_LEN]
     uint64_t instrument_id
+    InstrumentInfo iinfo
     int error_code
     int instrument_index
 

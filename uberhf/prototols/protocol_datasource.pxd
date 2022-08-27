@@ -7,7 +7,7 @@ from uberhf.prototols.protocol_base cimport ProtocolBase, ConnectionState
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.datafeed.uhffeed cimport Quote
-from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, TransportHeader
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
 
 
 cdef class ProtocolDataSourceBase(ProtocolBase):
@@ -18,7 +18,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
     cdef void activate_client(self, ConnectionState * cstate) nogil
     cdef void disconnect_client(self, ConnectionState * cstate) nogil
 
-    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id) nogil
+    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil
     cdef int on_register_instrument(self, ProtocolDSRegisterMessage *msg) nogil
 
     cdef int send_new_quote(self, ProtocolDSQuoteMessage * qmsg, int send_no_copy) nogil
