@@ -6,11 +6,10 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.prototols.protocol_base cimport ProtocolBase, ConnectionState
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
-from uberhf.datafeed.uhffeed cimport Quote
 from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
 
 
-cdef class ProtocolDataSourceBase(ProtocolBase):
+cdef class ProtocolDataSource(ProtocolBase):
     cdef DatasourceAbstract source_client
     cdef UHFeedAbstract feed_server
 

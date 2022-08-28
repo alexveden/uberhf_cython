@@ -180,14 +180,20 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         cdef QCSourceHeader * src_h = &qc.sources[0]
         src_h.quotes_status = ProtocolStatus.UHF_ACTIVE
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
+        src_h.quotes_status = ProtocolStatus.UHF_ERROR
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
+        src_h.quotes_status = ProtocolStatus.UHF_INACTIVE
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
+        src_h.quotes_status = ProtocolStatus.UHF_CONNECTING
+        assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
 
         src_h.quotes_status = ProtocolStatus.UHF_INITIALIZING
         src_h.data_source_id[0] = b'8'
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == -5
         src_h.data_source_id[0] = b'1'
 
-        assert qc.header.source_errors == 10
-        assert src_h.source_errors == 2
+        assert qc.header.source_errors == 13
+        assert src_h.source_errors == 5
 
 
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
@@ -195,12 +201,12 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.source_register_instrument(b'12345', b'RU.F.SiH9', 1233, &iinfo) == -6
 
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 1234, &iinfo) == -7
-        assert src_h.source_errors == 3, int(src_h.source_errors)
+        assert src_h.source_errors == 6, int(src_h.source_errors)
 
         assert qc.source_register_instrument(b'1234', b'RU.F.RTS', 123, &iinfo) == -8
-        assert qc.header.source_errors == 13, qc.header.source_errors
+        assert qc.header.source_errors == 16, qc.header.source_errors
 
-        assert qc.sources[0].source_errors == 3
+        assert qc.sources[0].source_errors == 6
         assert qc.sources[1].source_errors == 1
 
         assert qc.header.quote_count == 2
@@ -235,6 +241,11 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.source_register_instrument(b'12345', b'RU.F.RTS', 123, &iinfo) == 0
         assert qc.source_activate(b'12345') == 0
         assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ACTIVE
+
+        # Accidentally some error down the road
+        assert qc.source_initialize(b'12345', gen_lifetime_id(12)) == -100
+        assert qc.source_activate(b'12345') == -4
+        assert qc.sources[0].quotes_status == ProtocolStatus.UHF_ERROR
 
     def test_source_disconnect(self):
         qc = SharedQuotesCache(1234, 5, 3)

@@ -6,7 +6,6 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.prototols.protocol_base cimport ProtocolBase, ConnectionState
 from uberhf.prototols.abstract_feedclient cimport FeedClientAbstract
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
-from uberhf.datafeed.uhffeed cimport Quote
 from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, TransportHeader, ProtocolDFSubscribeMessage
 
 

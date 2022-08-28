@@ -9,7 +9,7 @@ from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
-from uberhf.prototols.protocol_datasource cimport ProtocolDataSourceBase
+from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
@@ -29,7 +29,7 @@ global_iinfo.price_scale = 2
 global_iinfo.usd_point_value = 1
 
 cdef class UHFeedMock(UHFeedAbstract):
-    cdef ProtocolDataSourceBase protocol
+    cdef ProtocolDataSource protocol
     cdef int on_initialize_ncalls
     cdef int on_disconnect_ncalls
     cdef int on_activate_ncalls
@@ -52,11 +52,12 @@ cdef class UHFeedMock(UHFeedAbstract):
         self.hm_tickers = HashMap(50)
 
     cdef void register_datasource_protocol(self, object protocol):
-        self.protocol = <ProtocolDataSourceBase> protocol
+        self.protocol = <ProtocolDataSource> protocol
 
 
-    cdef void source_on_initialize(self, char * source_id) nogil:
+    cdef void source_on_initialize(self, char * source_id, unsigned int source_life_id) nogil:
         cyassert(strcmp(source_id, b'CLI') == 0)
+        cyassert(source_life_id > 10L**8L)
         self.on_initialize_ncalls += 1
 
     cdef void source_on_activate(self, char * source_id) nogil:
@@ -94,7 +95,7 @@ cdef class UHFeedMock(UHFeedAbstract):
         self.quotes_processed += 1
 
 cdef class DataSourceMock(DatasourceAbstract):
-    cdef ProtocolDataSourceBase protocol
+    cdef ProtocolDataSource protocol
     cdef int on_initialize_ncalls
     cdef int on_disconnect_ncalls
     cdef int on_activate_ncalls
@@ -115,7 +116,7 @@ cdef class DataSourceMock(DatasourceAbstract):
         self.hm_tickers = HashMap(50)
 
     cdef void register_datasource_protocol(self, object protocol):
-        self.protocol = <ProtocolDataSourceBase> protocol
+        self.protocol = <ProtocolDataSource> protocol
 
     cdef void source_on_initialize(self) nogil:
         self.on_initialize_ncalls += 1
@@ -175,11 +176,11 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
 
         #cybreakpoint(1)
         with self.assertRaises(ValueError) as exc:
-            ps = ProtocolDataSourceBase(11, None, None, None)
+            ps = ProtocolDataSource(11, None, None, None)
         self.assertEqual('You must set one of source_client or feed_server', str(exc.exception))
 
         with self.assertRaises(ValueError) as exc:
-            ps = ProtocolDataSourceBase(11, None, source, feed)
+            ps = ProtocolDataSource(11, None, source, feed)
         self.assertEqual('Arguments are mutually exclusive: source_client, feed_server', str(exc.exception))
 
     def test_protocol_instrument_registration(self):
@@ -202,8 +203,8 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 feed = UHFeedMock()
 
                 #cybreakpoint(1)
-                ps = ProtocolDataSourceBase(11, transport_s, None, feed)
-                pc = ProtocolDataSourceBase(22, transport_c, source, None)
+                ps = ProtocolDataSource(11, transport_s, None, feed)
+                pc = ProtocolDataSource(22, transport_c, source, None)
 
                 assert pc.send_register_instrument(b'TEST', 111, &global_iinfo) == PROTOCOL_ERR_WRONG_ORDER
 
@@ -300,8 +301,8 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 feed = UHFeedMock()
 
                 #cybreakpoint(1)
-                ps = ProtocolDataSourceBase(11, transport_s, None, feed)
-                pc = ProtocolDataSourceBase(22, transport_c, source, None)
+                ps = ProtocolDataSource(11, transport_s, None, feed)
+                pc = ProtocolDataSource(22, transport_c, source, None)
                 cstate = pc.get_state(b'')
                 sstate = ps.get_state(b'CLI')
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)

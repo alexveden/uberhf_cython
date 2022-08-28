@@ -6,7 +6,7 @@ cdef class UHFeedAbstract:
     cdef void register_datasource_protocol(self, object protocol)
     cdef void register_datafeed_protocol(self, object protocol)
 
-    cdef void source_on_initialize(self, char * source_id) nogil
+    cdef void source_on_initialize(self, char * source_id, unsigned int source_life_id) nogil
     cdef void source_on_activate(self, char * source_id) nogil
     cdef void source_on_disconnect(self, char * source_id) nogil
 

@@ -13,7 +13,7 @@ cdef class UHFeedAbstract:
     cdef void register_datafeed_protocol(self, object protocol):
         raise NotImplementedError('You must override this method in child class')
 
-    cdef void source_on_initialize(self, char * source_id) nogil:
+    cdef void source_on_initialize(self, char * source_id, unsigned int source_life_id) nogil:
         """
         Indicates that source wants to re-initialize its feed
         :return: 

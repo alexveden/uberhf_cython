@@ -18,7 +18,7 @@ DEF MSGT_QUOTE = b'q'
 DEF MSGT_IINFO = b'i'
 
 
-cdef class ProtocolDataSourceBase(ProtocolBase):
+cdef class ProtocolDataSource(ProtocolBase):
     def __cinit__(self, module_id, transport, source_client = None, feed_server = None, heartbeat_interval_sec=5):
         if source_client is None and feed_server is None:
             raise ValueError(f'You must set one of source_client or feed_server')
@@ -57,7 +57,7 @@ cdef class ProtocolDataSourceBase(ProtocolBase):
         # super() method just only does - self.send_activate()
         #return ProtocolBase.initialize_client(self, cstate)
         if self.is_server:
-            self.feed_server.source_on_initialize(cstate.sender_id)
+            self.feed_server.source_on_initialize(cstate.sender_id, cstate.client_life_id)
         else:
             self.source_client.source_on_initialize()
 

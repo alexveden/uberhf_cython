@@ -243,6 +243,14 @@ cdef class SharedQuotesCache:
             cyassert(src_i < self.header.source_capacity)
             src_h = &self.sources[src_i]
 
+            cyassert(src_h.magic_number == TRANSPORT_HDR_MGC)
+
+            if <int>(src_h.data_source_life_id/10**8) != <int>(data_source_life_id / 10 ** 8):
+                # Sources under the same name but different module ids
+                src_h.quotes_status = ProtocolStatus.UHF_ERROR
+                return -100
+
+
         if strcmp(src_h.data_source_id, data_src_id) != 0 or src_h.magic_number != TRANSPORT_HDR_MGC:
             # Malformed of new source
             strlcpy(src_h.data_source_id, data_src_id, TRANSPORT_SENDER_SIZE)
@@ -372,9 +380,11 @@ cdef class SharedQuotesCache:
             self.header.source_errors += 1
             return -3
         else:
-            cyassert(src_h.quotes_status == ProtocolStatus.UHF_INITIALIZING)
-            src_h.quotes_status = ProtocolStatus.UHF_ACTIVE
-            return src_idx.idx
+            if src_h.quotes_status == ProtocolStatus.UHF_INITIALIZING:
+                src_h.quotes_status = ProtocolStatus.UHF_ACTIVE
+                return src_idx.idx
+            else:
+                return -4
 
     cdef int source_disconnect(self, char * data_src_id) nogil:
         """
@@ -482,8 +492,6 @@ cdef class SharedQuotesCache:
         return tckr_idx.idx
 
 
-
-
     cdef QCRecord * get(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0) # Only for clients!
 
@@ -531,8 +539,6 @@ cdef class SharedQuotesCache:
 
         if self.shmem_fd != -1:
             close(self.shmem_fd)
-
-
 
         if self.lock_fd != -1:
             close(self.lock_fd)

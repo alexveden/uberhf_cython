@@ -1,6 +1,6 @@
 from libc.stdint cimport uint16_t
 
-ctypedef enum ProtocolStatus: UHF_INACTIVE, UHF_CONNECTING, UHF_INITIALIZING, UHF_ACTIVE
+ctypedef enum ProtocolStatus: UHF_INACTIVE, UHF_CONNECTING, UHF_INITIALIZING, UHF_ACTIVE, UHF_ERROR
 
 cdef extern from "uhfprotocols.h"  nogil:
     const int MODULE_ID_UHFEED
