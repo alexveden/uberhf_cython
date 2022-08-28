@@ -5,7 +5,9 @@ ctypedef enum ProtocolStatus: UHF_INACTIVE, UHF_CONNECTING, UHF_INITIALIZING, UH
 cdef extern from "uhfprotocols.h"  nogil:
     const int MODULE_ID_UHFEED
     const int MODULE_ID_ORDER_ROUTER
-    const int MODULE_ID_TEST
+    const int MODULE_ID_TEST_SRC
+    const int MODULE_ID_TEST_FEED
+
 
     const uint16_t TRANSPORT_HDR_MGC
     const size_t TRANSPORT_SENDER_SIZE

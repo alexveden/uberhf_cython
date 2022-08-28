@@ -180,6 +180,7 @@ cdef class ProtocolDataSource(ProtocolBase):
         cyassert(self.is_server == 0)  # Only clients allowed
         cyassert(msg != NULL)
         cyassert(msg.header.msg_type == MSGT_QUOTE)
+        cyassert(msg.header.protocol_id == self.protocol_id)
 
         return self.transport.send(NULL, msg, sizeof(ProtocolDSQuoteMessage), no_copy=send_no_copy)
 

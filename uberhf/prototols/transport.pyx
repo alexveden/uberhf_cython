@@ -94,7 +94,7 @@ cdef class Transport:
         if self.socket_type in [ZMQ_PUB, ZMQ_ROUTER]:
             if self.socket_type == ZMQ_ROUTER:
                 zmq_setsockopt(self.socket, ZMQ_ROUTER_MANDATORY, &router_mandatory, sizeof(int))
-                zmq_setsockopt(self.socket, ZMQ_RCVTIMEO, &rcv_timeout, sizeof(int))
+                #zmq_setsockopt(self.socket, ZMQ_RCVTIMEO, &rcv_timeout, sizeof(int))
                 zmq_setsockopt(self.socket, ZMQ_SNDTIMEO, &rcv_timeout, sizeof(int))
             elif self.socket_type == ZMQ_PUB:
                 if sub_topic is not None:
@@ -268,6 +268,9 @@ cdef class Transport:
         :param data: must be the same pointer as you get from transport.receive() 
         :return: 
         """
+        if self.socket == NULL:
+            return
+
         # Check if not already finalized
         cyassert(self.last_msg_received_ptr != NULL) #, f'You are trying to finalize not received data or multiple receive_finalize() calls'
 
@@ -364,21 +367,19 @@ cdef class Transport:
             return self.last_data_received_ptr
 
     cdef void close(self) nogil:
-        cdef int timeout = 0  # 2 seconds
+        cdef int timeout = 0
         self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
+
+        # Not finalized receive but closing socket!
+        if self.last_data_received_ptr != NULL:
+            self.receive_finalize(self.last_data_received_ptr)
 
         if self.socket != NULL:
             zmq_setsockopt(self.socket, ZMQ_LINGER, &timeout, sizeof(int))
             zmq_close(self.socket)
             self.socket = NULL
 
-        # Not finalized receive but closing socket!
-        cyassert(self.last_msg_received_ptr == NULL)
 
     def __dealloc__(self):
-        cdef int timeout = 0  # 2 seconds
-
-        if self.socket != NULL:
-            zmq_setsockopt(self.socket, ZMQ_LINGER, &timeout, sizeof(int))
-            zmq_close(self.socket)
+        self.close()
 

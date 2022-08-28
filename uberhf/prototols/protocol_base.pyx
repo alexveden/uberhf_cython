@@ -352,7 +352,7 @@ cdef class ProtocolBase:
         This method intended for call in ZMQ poller loops of the main application, it has to be called with some timeout interval 
         (say 100-200 millisec), to avoid CPU overload        
         :param dtnow: current time, datetime_nsnow()
-        :return: 0 if 
+        :return: positive or zero when ok, negative is error
         """
         cdef size_t i = 0
         cdef void * hm_data = NULL

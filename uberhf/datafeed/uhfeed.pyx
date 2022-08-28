@@ -4,20 +4,53 @@ from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMes
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.protocol_datafeed cimport ProtocolDataFeed
-from uberhf.includes.utils cimport gen_lifetime_id
+from uberhf.prototols.transport cimport Transport
+from uberhf.includes.utils cimport datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns
 from .quotes_cache cimport SharedQuotesCache, QCRecord
 from libc.stdio cimport printf
+from uberhf.prototols.libzmq cimport *
+
+cdef extern from "<signal.h>" nogil:
+    enum: SIGINT
+    enum: SIGQUIT
+    int signal(int signum, void (*sighandler_t)(int))
+
+cdef void sig_handler(int signum) nogil:
+    """
+    Simple signal handler to stop the program by Ctrl+C
+    """
+    global global_is_shutting_down
+    global_is_shutting_down = 1
 
 
 cdef class UHFeed(UHFeedAbstract):
-    def __cinit__(self):
-        self.uhfeed_life_id = gen_lifetime_id(MODULE_ID_UHFEED)
-        self.quote_cache = SharedQuotesCache(self.uhfeed_life_id, 5, 10000)
+    def __cinit__(self, zmq_context_ptr, zmq_url_router, zmq_url_pub,  source_capacity=5, quote_capacity=10000):
+
+        self.transport_router = None
+        self.transport_pub = None
+        self.transport_router = Transport(<uint64_t>zmq_context_ptr, zmq_url_router, ZMQ_ROUTER, b'UFEED')
+        self.transport_pub = Transport(<uint64_t>zmq_context_ptr, zmq_url_pub, ZMQ_PUB, b'UFEED')
+
+        pfeed = ProtocolDataFeed(MODULE_ID_UHFEED, self.transport_router, self.transport_pub, None, self)
+        psource = ProtocolDataSource(MODULE_ID_UHFEED, self.transport_router, None, self)
+
+        self.uhfeed_life_id = psource.server_life_id
+        self.quote_cache = SharedQuotesCache(self.uhfeed_life_id, source_capacity, quote_capacity)
         self.quotes_received = 0
         self.quotes_emitted = 0
         self.source_errors = 0
         self.quotes_errors = 0
         self.feed_errors = 0
+
+        self.zmq_poll_timeout = 50
+        self.zmq_poll_array[0] = [self.transport_router.socket, 0, ZMQ_POLLIN, 0]
+        self.is_shutting_down = 0
+
+    def __dealloc__(self):
+        if self.transport_pub is not None:
+            self.transport_pub.close()
+        if self.transport_router is not None:
+            self.transport_router.close()
 
     cdef void register_datasource_protocol(self, object protocol):
         self.protocol_source = <ProtocolDataSource> protocol
@@ -34,7 +67,7 @@ cdef class UHFeed(UHFeedAbstract):
             self.source_errors += 1
             self.protocol_feed.send_source_status(source_id, ProtocolStatus.UHF_ERROR)
         else:
-            printf(b'source_on_initialize: success `%s` life_id: %ud\n', source_id, source_life_id)
+            printf(b'source_on_initialize: success `%s` life_id: %u\n', source_id, source_life_id)
             self.protocol_feed.send_source_status(source_id, ProtocolStatus.UHF_INITIALIZING)
 
     cdef void source_on_activate(self, char * source_id) nogil:
@@ -101,3 +134,70 @@ cdef class UHFeed(UHFeedAbstract):
             printf(b'feed_on_subscribe: success %s ClId: %ud\n', v2_ticker, client_life_id)
 
         return rc
+
+    cdef int main(self) nogil:
+        cdef void * transport_data
+        cdef size_t msg_size = 0
+        cdef int rc = 0
+        cdef long dt_prev_call = datetime_nsnow()
+        cdef long dt_now = datetime_nsnow()
+        cdef bint has_data = 0
+
+
+        global global_is_shutting_down
+
+        signal(SIGINT, sig_handler)
+        signal(SIGQUIT, sig_handler)
+
+        while not self.is_shutting_down and not global_is_shutting_down:
+            zmq_poll(self.zmq_poll_array, 1, self.zmq_poll_timeout)
+
+            if self.zmq_poll_array[0].revents & ZMQ_POLLIN:
+                transport_data = self.transport_router.receive(&msg_size)
+
+                rc = self.protocol_source.on_process_new_message(transport_data, msg_size)
+                if rc < 0:
+                    printf('protocol_source.on_process_new_message error: %d\n', rc)
+                elif rc == 0:
+                    rc = self.protocol_feed.on_process_new_message(transport_data, msg_size)
+
+                    if rc < 0:
+                        printf('protocol_feed.on_process_new_message error: %d\n', rc)
+
+                self.transport_router.receive_finalize(transport_data)
+                has_data = 1
+            else:
+                dt_now = datetime_nsnow()
+                has_data = 0
+
+            if not has_data and timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
+
+                # Avoid heart beating too frequently, but heartbeat intervals in seconds are managed by protocols
+                rc = self.protocol_source.heartbeat(dt_now)
+                if rc < 0:
+                    printf('protocol_source.heartbeat error: %d\n', rc)
+
+                rc = self.protocol_feed.heartbeat(dt_now)
+                if rc < 0:
+                    printf('protocol_feed.heartbeat error: %d\n', rc)
+
+                dt_prev_call = dt_now
+
+        if self.is_shutting_down:
+            printf(b'UHFeed shutting down\n')
+        elif global_is_shutting_down:
+            printf(b'UHFeed shutting down by signal\n')
+
+        printf('UHFeed stats:\n')
+        printf('\tSources registered: %d\n', self.quote_cache.header.source_count)
+        printf('\tInstruments registered: %d\n', self.quote_cache.header.quote_count)
+        printf('\tQuotes received: %d\n', self.quotes_received)
+        printf('\tQuotes emitted: %d\n', self.quotes_emitted)
+        printf('\tQuotes errors: %d\n', self.quotes_errors)
+
+
+        #
+        # Exit and finalize
+        #
+        self.transport_router.close()
+        self.transport_pub.close()

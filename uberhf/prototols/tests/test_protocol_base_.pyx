@@ -744,11 +744,11 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                     socks = dict(poller.poll(50))
                     if s_socket in socks and socks[s_socket] == zmq.POLLIN:
                         transport_data = transport_s.receive(&msg_size)
-                        assert ps.on_process_new_message(transport_data, msg_size) > 0
+                        self.assertGreater(ps.on_process_new_message(transport_data, msg_size), 0)
                         transport_s.receive_finalize(transport_data)
                     if c_socket in socks and socks[c_socket] == zmq.POLLIN:
                         transport_data = transport_c.receive(&msg_size)
-                        assert pc.on_process_new_message(transport_data, msg_size) > 0
+                        self.assertGreater(pc.on_process_new_message(transport_data, msg_size), 0)
                         transport_c.receive_finalize(transport_data)
 
                     dt_now = datetime_nsnow()

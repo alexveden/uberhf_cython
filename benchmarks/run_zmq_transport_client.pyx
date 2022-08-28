@@ -8,10 +8,7 @@ from libc.stdio cimport printf
 from uberhf.prototols.messages cimport *
 import time
 
-ctypedef struct SomeMessage:
-    TransportHeader header
 
-    int data
 
 cpdef main():
     cdef void * ctx = zmq_ctx_new()
@@ -28,11 +25,11 @@ cpdef main():
     print(f'Sending {n_messages}')
     t_begin = time.time()
 
-    cdef SomeMessage msg
-    msg.data = 123
+    cdef ProtocolDSQuoteMessage msg
+    memset(&msg, 98, sizeof(ProtocolDSQuoteMessage))
 
     for i in range(n_messages):
-        n_sent = transport.send(NULL, &msg, sizeof(SomeMessage), no_copy=False)
+        n_sent = transport.send(NULL, &msg, sizeof(ProtocolDSQuoteMessage), no_copy=False)
         #printf('Sent: hi, %d bytes\n', n_sent)
 
         #data = transport.receive(&data_size)

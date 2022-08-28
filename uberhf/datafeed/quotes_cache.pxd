@@ -44,6 +44,7 @@ ctypedef struct Name2Idx:
 
 
 cdef class SharedQuotesCache:
+    cdef const char* shared_filename
     cdef bint is_server
     cdef int lock_fd
     cdef bint lock_acquired

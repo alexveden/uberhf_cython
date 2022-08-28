@@ -4,10 +4,11 @@ from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMes
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.protocol_datafeed cimport ProtocolDataFeed
+from uberhf.prototols.transport cimport Transport
 from .quotes_cache cimport SharedQuotesCache
+from uberhf.prototols.libzmq cimport *
 
-
-
+cdef bint global_is_shutting_down = 0
 
 cdef class UHFeed(UHFeedAbstract):
     cdef unsigned int quotes_received
@@ -15,10 +16,16 @@ cdef class UHFeed(UHFeedAbstract):
     cdef unsigned int quotes_errors
     cdef unsigned int source_errors
     cdef unsigned int feed_errors
-    cdef unsigned int uhffeed_life_id
+    cdef unsigned int uhfeed_life_id
+    cdef bint is_shutting_down
     cdef SharedQuotesCache quote_cache
     cdef ProtocolDataSource protocol_source
     cdef ProtocolDataFeed protocol_feed
+    cdef Transport transport_router
+    cdef Transport transport_pub
+
+    cdef int zmq_poll_timeout
+    cdef zmq_pollitem_t zmq_poll_array[1]
 
     cdef void register_datasource_protocol(self, object protocol)
     cdef void register_datafeed_protocol(self, object protocol)
@@ -31,3 +38,5 @@ cdef class UHFeed(UHFeedAbstract):
     cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil
+
+    cdef int main(self) nogil

@@ -17,18 +17,15 @@ import fcntl
 import os
 from multiprocessing import Lock
 
-DEF SHARED_FN = b'/uhfeed_shared_cache'
-
 lock = Lock()
 
 cdef class SharedQuotesCache:
-
-
-    def __cinit__(self, unsigned int uhffeed_life_id, int source_capacity, int quotes_capacity):
+    def __cinit__(self, unsigned int uhffeed_life_id, int source_capacity, int quotes_capacity, shared_filename=b'/uhfeed_shared_cache'):
         self.uhffeed_life_id = uhffeed_life_id
         self.is_server = uhffeed_life_id != 0
         self.mmap_data = NULL
         self.shmem_fd = -1
+        self.shared_filename = shared_filename
 
         cdef int sh_fn_access = 0
         if self.is_server:
@@ -55,7 +52,7 @@ cdef class SharedQuotesCache:
             self.lock_acquired = 0 # Client don't hold locks
             self.lock_fd = -1
 
-        self.shmem_fd = shm_open(SHARED_FN, sh_fn_access, S_IRWXU)
+        self.shmem_fd = shm_open(self.shared_filename, sh_fn_access, S_IRWXU)
 
         if self.shmem_fd == -1:
             raise FileNotFoundError(f'shm_open: possibly no server running. {strerror(errno)}')
@@ -245,7 +242,7 @@ cdef class SharedQuotesCache:
 
             cyassert(src_h.magic_number == TRANSPORT_HDR_MGC)
 
-            if <int>(src_h.data_source_life_id/10**8) != <int>(data_source_life_id / 10 ** 8):
+            if src_h.data_source_life_id != 0 and <int>(src_h.data_source_life_id/10**8) != <int>(data_source_life_id / 10 ** 8):
                 # Sources under the same name but different module ids
                 src_h.quotes_status = ProtocolStatus.UHF_ERROR
                 return -100

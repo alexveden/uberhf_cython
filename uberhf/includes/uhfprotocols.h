@@ -1,7 +1,8 @@
 //
 // GLOBAL MODULES ID (typically it's used only in lifetime number generation for a clarity sake)
 // MUST be between 1 and 40
-#define MODULE_ID_TEST 40
+#define MODULE_ID_TEST_SRC 39
+#define MODULE_ID_TEST_FEED 40
 #define MODULE_ID_UHFEED 10
 #define MODULE_ID_ORDER_ROUTER 20
 
