@@ -41,7 +41,9 @@ cdef class DataFeedTester(FeedClientAbstract):
 
     cdef void feed_on_instrumentinfo(self, int instrument_index) nogil
 
+    cdef void feed_on_initialize(self) nogil
     cdef void feed_on_activate(self) nogil
+    cdef void feed_on_disconnect(self) nogil
 
     cdef int main(self) nogil
 

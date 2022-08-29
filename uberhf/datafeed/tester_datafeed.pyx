@@ -72,8 +72,6 @@ cdef class DataFeedTester(FeedClientAbstract):
         else:
             self.n_unsubscriptions_confirmations += 1
 
-    cdef void feed_on_activate(self) nogil:
-        printf(b'feed_on_activate\n')
 
     # Server reports the datasource status has changed
     cdef void feed_on_source_status(self, char * data_source_id, ProtocolStatus quotes_status) nogil:
@@ -166,3 +164,12 @@ cdef class DataFeedTester(FeedClientAbstract):
         printf('\tSource statuses received: %d\n', self.n_src_status)
         printf('\t# quotes in cache: %d\n', self.qcache.header.quote_count)
         printf('\t# sources in cache: %d\n', self.qcache.header.source_count)
+
+    cdef void feed_on_initialize(self) nogil:
+        printf(b'feed_on_initialize\n')
+
+    cdef void feed_on_activate(self) nogil:
+        printf(b'feed_on_activate\n')
+
+    cdef void feed_on_disconnect(self) nogil:
+        printf(b'feed_on_disconnect\n')

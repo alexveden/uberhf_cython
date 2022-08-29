@@ -133,6 +133,11 @@ cdef class UHFeed(UHFeedAbstract):
                     # Error
                     pass
 
+    cdef void feed_on_initialize(self, char * feed_id) nogil:
+        printf(b'feed_on_initialize: %s\n', feed_id)
+        for i in range(self.quote_cache.header.source_count):
+            self.protocol_feed.send_source_status(self.quote_cache.sources[i].data_source_id, self.quote_cache.sources[i].quotes_status)
+
     cdef void feed_on_activate(self, char * feed_id) nogil:
         """
         Feed completed initialization and ready to activate
@@ -141,8 +146,9 @@ cdef class UHFeed(UHFeedAbstract):
         :return: 
         """
         printf(b'feed_on_activate: %s\n', feed_id)
-        for i in range(self.quote_cache.header.source_count):
-            self.protocol_feed.send_source_status(self.quote_cache.sources[i].data_source_id, self.quote_cache.sources[i].quotes_status)
+
+    cdef void feed_on_disconnect(self, char * feed_id) nogil:
+        printf(b'feed_on_disconnect: %s\n', feed_id)
 
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil:
         cdef int rc = self.quote_cache.feed_on_subscribe(v2_ticker, <uint64_t>client_life_id, is_subscribe)
