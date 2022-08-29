@@ -17,7 +17,7 @@ cdef class Transport:
     cdef readonly int socket_type
 
     cdef readonly char transport_id[TRANSPORT_SENDER_SIZE]
-    cdef readonly int transport_id_len
+    cdef readonly char router_id[TRANSPORT_SENDER_SIZE]
     cdef bint always_send_copy
 
     cdef readonly int msg_received
@@ -25,11 +25,13 @@ cdef class Transport:
     cdef readonly int msg_errors
     cdef readonly int last_error
 
+    cdef _socket_set_option(self, int zmq_opt, int value)
+
     cdef int get_last_error(self) nogil
     cdef const char* get_last_error_str(self, int errnum) nogil
 
     cdef int send(self, char *topic, void *data, size_t size, int no_copy)  nogil
-    cdef int _send_set_error(self, int err_code, void * data) nogil
+    cdef int _send_set_error(self, int err_code, void* free_data, int no_copy) nogil
 
     cdef void * receive(self, size_t *size) nogil
     cdef void * _receive_set_error(self, int errcode, size_t *size, bint close_msg) nogil

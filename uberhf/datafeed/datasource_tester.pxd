@@ -33,6 +33,7 @@ cdef class DataSourceTester(DatasourceAbstract):
     cdef size_t n_unique_tickers
     cdef HashMap hm_tickers
     cdef int quotes_sent
+    cdef int quotes_sent_errors
 
     cdef bint is_shutting_down
     cdef int zmq_poll_timeout

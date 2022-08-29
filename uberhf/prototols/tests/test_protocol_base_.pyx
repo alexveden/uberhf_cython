@@ -40,7 +40,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT , ZMQ_DEALER, b'CLI')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -73,7 +74,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -121,7 +123,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -260,7 +263,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -332,7 +336,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -410,7 +415,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -462,7 +468,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -527,7 +534,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -595,7 +603,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -678,7 +687,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -728,7 +738,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
@@ -785,7 +796,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_s = None
             transport_c = None
             try:
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 pc = ProtocolBaseTest(False, 22, transport_c, heartbeat_interval_sec=0.05)
 
@@ -810,7 +822,7 @@ class CyProtocolBaseTestCase(unittest.TestCase):
 
                         if i == 0:
                             # Trying to connect
-                            assert hb > 0
+                            assert hb == TRANSPORT_ERR_ZMQ
                             assert cstate.msg_sent == 1
                             assert cstate.last_msg_time_ns > 0
                             assert cstate.status == ProtocolStatus.UHF_INACTIVE
@@ -846,7 +858,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 ps = ProtocolBaseTest(True, 11, transport_s, heartbeat_interval_sec=0.05)
                 pc = ProtocolBaseTest(False, 22, transport_c, heartbeat_interval_sec=0.05)

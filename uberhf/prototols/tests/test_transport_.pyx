@@ -29,17 +29,21 @@ class CyTransportTestCase(unittest.TestCase):
         cdef size_t buffer_size
 
         with zmq.Context() as ctx:
-            transport = Transport(<uint64_t> ctx.underlying, URL_CONNECT , ZMQ_DEALER, b'CLIEN')
+            transport = None
             try:
+                transport = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLIEN', router_id=b'SRVER')
                 assert TRANSPORT_SENDER_SIZE == 6, 'Max sender size'
                 assert transport.socket != NULL, 'Socket must be initialized'
                 assert transport.last_error == 0, 'last error 0'
                 assert transport.context != NULL, f'context must be stored'
-                assert transport.transport_id_len == 5, 'transport.transport_id_len == 5'
                 assert memcmp(transport.transport_id, b'CLIEN', TRANSPORT_SENDER_SIZE) == 0, 'transport.transport_id no match'
                 assert memcmp(transport.transport_id, b'CLIEN\0', TRANSPORT_SENDER_SIZE) == 0, 'transport.transport_id no match'
                 assert strcmp(transport.transport_id, b'CLIEN') == 0, 'transport.transport_id no match'
                 assert transport.socket_type == ZMQ_DEALER
+
+                assert memcmp(transport.router_id, b'SRVER', TRANSPORT_SENDER_SIZE) == 0, 'transport.router_id no match'
+                assert memcmp(transport.router_id, b'SRVER\0', TRANSPORT_SENDER_SIZE) == 0, 'transport.router_id no match'
+                assert strcmp(transport.router_id, b'SRVER') == 0, 'transport.router_id no match'
 
                 socket = zmq.Socket.shadow(<uint64_t>transport.socket)
                 socket_routing_id = socket.get(zmq.ROUTING_ID)
@@ -49,34 +53,35 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport.close()
-                assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
+                if transport is not None:
+                    transport.close()
+                    assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
 
     def test_init_router(self):
         cdef char buffer[255]
         cdef size_t buffer_size
 
         with zmq.Context() as ctx:
-            transport = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'C')
+            transport = None
             try:
+                transport = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'C')
                 assert TRANSPORT_SENDER_SIZE == 6, 'Max sender size'
                 assert transport.socket != NULL, 'Socket must be initialized'
                 assert transport.last_error == 0, 'last error 0'
                 assert transport.context != NULL, f'context must be stored'
-                assert transport.transport_id_len == 1, 'transport.transport_id_len == 1'
                 assert memcmp(transport.transport_id, b'C', 1) == 0, 'transport.transport_id no match'
                 assert transport.socket_type == ZMQ_ROUTER
 
                 socket = zmq.Socket.shadow(<uint64_t>transport.socket)
                 socket_routing_id = socket.get(zmq.ROUTING_ID)
-                assert len(socket_routing_id) == 0, f'ZMQ_ROUTING_ID length'
-                assert transport.last_error == 0
+                assert socket_routing_id == b'C', f'ZMQ_ROUTING_ID length'
             except:
                 raise
             finally:
-                transport.close()
-                assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
-                assert transport.socket == NULL
+                if transport is not None:
+                    transport.close()
+                    assert transport.last_error == TRANSPORT_ERR_SOCKET_CLOSED
+                    assert transport.socket == NULL
 
     def test_simple_client_request(self):
         cdef char buffer[255]
@@ -86,11 +91,14 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1) # Sleep to make connection established, because transport_c is non-blocking!
                 msg.data = 777
-                transport_c.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False)
+                self.assertGreater(transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False), 0, transport_c.get_last_error_str(transport_c.get_last_error()))
                 # Change of this value must not affect the received value
                 msg.data = 888
 
@@ -113,8 +121,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_simple_server_response(self):
         cdef char buffer[255]
@@ -124,11 +134,14 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
                 msg.data = 777
-                transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+                self.assertGreater(transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False), 0)
                 assert transport_c.msg_sent == 1
                 assert transport_c.msg_received == 0
                 assert transport_c.msg_errors == 0
@@ -165,8 +178,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_null_data_handling(self):
         cdef char buffer[255]
@@ -177,9 +192,13 @@ class CyTransportTestCase(unittest.TestCase):
 
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
                 msg.data = 777
                 result = transport_c.send(NULL, NULL, sizeof(TestGenericMessage), no_copy=False)
                 assert transport_c.msg_sent == 0
@@ -191,8 +210,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_size_handling(self):
         cdef char buffer[255]
@@ -203,9 +224,13 @@ class CyTransportTestCase(unittest.TestCase):
 
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
                 msg.data = 777
                 result = transport_c.send(NULL, &msg, 0, no_copy=False)
                 assert transport_c.msg_sent == 0
@@ -217,8 +242,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_incoming__bad_header(self):
         cdef char buffer[255]
@@ -229,16 +256,19 @@ class CyTransportTestCase(unittest.TestCase):
 
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-            socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
-            msg.header.magic_number = 2344
-            pmsg = &msg
-            memcpy(buffer, &msg, sizeof(TestGenericMessage))
-
+            transport_s = None
+            transport_c = None
             try:
-                socket.send(buffer[:sizeof(TestGenericMessage)])
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                msg.header.magic_number = 2344
+                pmsg = &msg
+                memcpy(buffer, &msg, sizeof(TestGenericMessage))
+
+                socket.send_multipart([b'SRV', buffer[:sizeof(TestGenericMessage)]])
                 pmsg = <TestGenericMessage *> transport_s.receive(&buffer_size)
                 assert transport_s.msg_sent == 0
                 assert transport_s.msg_received == 0
@@ -249,8 +279,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_incoming__bad_size(self):
         cdef char buffer[255]
@@ -260,13 +292,16 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
 
-            socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
-
+            transport_s = None
+            transport_c = None
             try:
-                socket.send(b'test')
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+                socket.send_multipart([b'SRV', b'test'])
                 pmsg = <TestGenericMessage *> transport_s.receive(&buffer_size)
                 assert buffer_size == 0
                 assert transport_s.msg_sent == 0
@@ -278,8 +313,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not None:
+                    transport_c.close()
 
     def test_bad_data_incoming__bad_size__multipart(self):
         cdef char buffer[255]
@@ -289,13 +326,15 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-            socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
-
+            transport_s = None
+            transport_c = None
             try:
-                socket.send_multipart([b'test', b'not good'])
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+                socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+
+                socket.send_multipart([b'SRV', b'test', b'not good'])
                 pmsg = <TestGenericMessage *> transport_s.receive(&buffer_size)
                 assert buffer_size == 0
                 assert transport_s.msg_sent == 0
@@ -307,8 +346,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_incoming__bad_size__multipart_dealer(self):
         cdef char buffer[255]
@@ -318,12 +359,14 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-            socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
-
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                socket = zmq.Socket.shadow(<uint64_t> transport_s.socket)
 
                 msg.data = 777
                 transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
@@ -356,8 +399,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_incoming__receive_socket_closed(self):
         cdef char buffer[255]
@@ -367,13 +412,16 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-            socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
-
+            transport_s = None
+            transport_c = None
             try:
-                socket.send_multipart([b'test', b'not good'])
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
+
+                socket.send_multipart([b'SRV', b'test', b'not good'])
                 transport_s.close()
                 pmsg = <TestGenericMessage *> transport_s.receive(&buffer_size)
                 assert buffer_size == 0
@@ -386,8 +434,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                #transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     def test_bad_data_incoming__send_socket_closed(self):
         cdef char buffer[255]
@@ -397,12 +447,14 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-            socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
-
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                socket = zmq.Socket.shadow(<uint64_t> transport_c.socket)
                 msg.data = 777
                 transport_c.close()
                 result = transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
@@ -416,8 +468,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                #transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
     @pytest.mark.skipif((os.environ.get('COVERAGE_RUN') is not None), reason='ZMQ and GIL lock conflict, when trying to free no_copy buffer')
     def test_simple_server_response__no_copy_valid(self):
@@ -429,14 +483,16 @@ class CyTransportTestCase(unittest.TestCase):
 
         cdef TestGenericMessage * msg1 =<TestGenericMessage *> malloc(sizeof(TestGenericMessage))
         cdef TestGenericMessage * msg2 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
+        cdef TestGenericMessage * msg3 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
-
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
                 assert zmq_free_count == 0
                 msg1.data = 777
                 assert transport_c.send(NULL, msg1, sizeof(TestGenericMessage), no_copy=True) > 0
@@ -474,14 +530,21 @@ class CyTransportTestCase(unittest.TestCase):
                 assert pmsg != NULL
                 assert pmsg.data == 778
                 transport_c.receive_finalize(pmsg)
+
+                transport_c.close()
+
+                # When ZMQ failure, the zmq-free callback also must be called!
+                assert transport_s.send(pmsg.header.sender_id, msg3, sizeof(TestGenericMessage), no_copy=True) == -64000
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
-        assert zmq_free_count == 2, int(zmq_free_count)
-
+        assert zmq_free_count == 3, int(zmq_free_count)
+    #
     def test_simple_server_response__no_copy_no_free(self):
         cdef char buffer[255]
         cdef size_t buffer_size
@@ -491,10 +554,12 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
-
+            transport_s = None
+            transport_c = None
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
                 assert zmq_free_count == 0
                 msg1.header.magic_number = TRANSPORT_HDR_MGC
                 strlcpy(msg1.header.sender_id, transport_c.transport_id, TRANSPORT_SENDER_SIZE)
@@ -548,15 +613,11 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                if transport_c.last_data_received_ptr != NULL:
-                    transport_c.receive_finalize(transport_c.last_data_received_ptr)
 
-                if transport_s.last_data_received_ptr != NULL:
-                    transport_s.receive_finalize(transport_s.last_data_received_ptr)
-
-
-                transport_s.close()
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
 
         assert zmq_free_count == 0, int(zmq_free_count)
         free(msg1)
@@ -575,8 +636,10 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_c = None
             try:
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
                 assert zmq_free_count == 0
                 msg1 = <TestGenericMessage *> malloc(sizeof(TestGenericMessage))
                 msg1.data = 777
@@ -594,7 +657,9 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_c.close()
+
+                if transport_c is not None:
+                    transport_c.close()
 
         assert zmq_free_count == 2, zmq_free_count
 
@@ -608,17 +673,22 @@ class CyTransportTestCase(unittest.TestCase):
         cdef size_t data_size
 
         with zmq.Context() as ctx:
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+            transport_c = None
             transport_s = None
             try:
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
                 msg.data = 777
                 result = transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
-                assert result == sizeof(TestGenericMessage)
+                assert result == TRANSPORT_ERR_ZMQ
+                assert transport_c.msg_errors == 1
+                assert transport_c.last_error == TRANSPORT_ERR_ZMQ
 
                 data = transport_c.receive(&data_size)
-                assert transport_c.msg_sent == 1
+                assert transport_c.msg_sent == 0
                 assert transport_c.msg_received == 0
-                assert transport_c.msg_errors == 1
+                assert transport_c.msg_errors == 2
                 assert data == NULL
                 assert data_size == 0
                 assert transport_c.last_error == TRANSPORT_ERR_ZMQ
@@ -628,7 +698,10 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_c.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not None:
+                    transport_c.close()
 
     def test_simple_client_request_no_server_poller(self):
         cdef char buffer[255]
@@ -641,15 +714,20 @@ class CyTransportTestCase(unittest.TestCase):
         cdef zmq_pollitem_t poll_items[1]
 
         with zmq.Context() as ctx:
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', socket_timeout=200)
+            transport_c = None
             transport_s = None
 
-            poll_items[0] = [transport_c.socket, 0, ZMQ_POLLIN, 0]
-
             try:
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV')
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
+
+                transport_s = None
+
+                poll_items[0] = [transport_c.socket, 0, ZMQ_POLLIN, 0]
+
                 msg.data = 777
                 result = transport_c.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
-                assert result == sizeof(TestGenericMessage)
+                assert result == TRANSPORT_ERR_ZMQ
 
                 while True:
                     # Poll isn't affected by recv timeouts!
@@ -660,7 +738,9 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_c.close()
+
+                if transport_c is not None:
+                    transport_c.close()
 
     def test_simple_pub_sub(self):
         cdef char buffer[255]
@@ -670,13 +750,20 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
-            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
+            transport_c = None
+            transport_s = None
+            transport_c2 = None
 
-            # Do some sleep to make sure sub process went well
-            time.sleep(0.5)
+
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
+                transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
+
+                # Do some sleep to make sure sub process went well
+                time.sleep(0.5)
+                #cybreakpoint(1)
+
                 msg.data = 777
                 transport_s.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
                 # Change of this value must not affect the received value
@@ -712,9 +799,13 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
-                transport_c2.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
+                if transport_c2 is not None:
+                    transport_c2.close()
+
 
     def test_simple_pub_sub_with_topic(self):
         cdef char buffer[255]
@@ -724,13 +815,19 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
-            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'test_topic_excluded')
+            transport_c = None
+            transport_s = None
+            transport_c2 = None
 
-            # Do some sleep to make sure sub process went well
-            time.sleep(0.5)
             try:
+
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
+                transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'test_topic_excluded')
+
+                # Do some sleep to make sure sub process went well
+                time.sleep(0.5)
+
                 msg.data = 777
 
                 # transport_c - will receive because sub_topic - compares prefix!
@@ -759,9 +856,12 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
-                transport_c2.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not None:
+                    transport_c.close()
+                if transport_c2 is not None:
+                    transport_c2.close()
 
 
     def test_simple_pub_sub_with_multi_topic(self):
@@ -772,13 +872,15 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
-            transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=[b'test_topic_excluded', b'multi'])
 
-            # Do some sleep to make sure sub process went well
-            time.sleep(0.5)
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_PUB, b'SRV')
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=b'important')
+                transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI', sub_topic=[b'test_topic_excluded', b'multi'])
+
+                # Do some sleep to make sure sub process went well
+                time.sleep(0.5)
+
                 msg.data = 777
 
                 # transport_c - will receive because sub_topic - compares prefix!
@@ -807,9 +909,12 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
-                transport_c.close()
-                transport_c2.close()
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not None:
+                    transport_c.close()
+                if transport_c2 is not None:
+                    transport_c2.close()
 
     def test_server_send_without_clients(self):
         cdef char buffer[255]
@@ -819,17 +924,17 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+
                 msg.data = 777
-                transport_c.close()
                 result = transport_s.send(b'CLI', &msg, sizeof(TestGenericMessage), no_copy=False)
                 assert transport_s.msg_sent == 0
                 assert transport_s.msg_received == 0
                 assert transport_s.msg_errors == 1
-
                 assert result == TRANSPORT_ERR_ZMQ
+
                 assert transport_s.get_last_error() == 113, transport_s.get_last_error()
                 assert transport_s.get_last_error_str(transport_s.get_last_error()) ==  b'Host unreachable'
             except:
@@ -845,9 +950,11 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            #transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
+                #transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
                 msg.data = 777
                 result = transport_s.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
                 assert transport_s.msg_sent == 0
@@ -859,7 +966,9 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
+                if transport_s is not None:
+                    transport_s.close()
+
 
     def test_server_send_topic_empty_is_mandatory(self):
         cdef char buffer[255]
@@ -869,9 +978,9 @@ class CyTransportTestCase(unittest.TestCase):
         cdef TestGenericMessage * pmsg
 
         with zmq.Context() as ctx:
-            transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
-            #transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI')
+
             try:
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV')
                 msg.data = 777
                 result = transport_s.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False)
                 assert transport_s.msg_sent == 0
@@ -883,4 +992,5 @@ class CyTransportTestCase(unittest.TestCase):
             except:
                 raise
             finally:
-                transport_s.close()
+                if transport_s is not None:
+                    transport_s.close()

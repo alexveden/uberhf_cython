@@ -13,7 +13,7 @@ from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
-from uberhf.includes.utils cimport gen_lifetime_id, datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns, strlcpy, random_int, TIMEDELTA_SEC
+from uberhf.includes.utils cimport gen_lifetime_id, datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns, strlcpy, random_int, TIMEDELTA_SEC, sleep_ns
 from uberhf.includes.hashmap cimport HashMap
 from .quotes_cache cimport SharedQuotesCache
 import numpy as np
@@ -72,6 +72,7 @@ cdef class DataSourceTester(DatasourceAbstract):
         self.on_register_n_err = 0
         self.n_unique_tickers = n_unique_tickers
         self.quotes_sent = 0
+        self.quotes_sent_errors = 0
         self.hm_tickers = HashMap(sizeof(SourceTickerCache), n_unique_tickers)
         ticker_arr = np.random.choice(np.array([l for l in 'ABCDEFGHJKLMNOPQRSTWXYZ'.encode()]), size=(n_unique_tickers, 10))
         assert len(ticker_arr) == n_unique_tickers
@@ -129,6 +130,7 @@ cdef class DataSourceTester(DatasourceAbstract):
         printf(b'source_on_initialize: %d instruments registered\n', n_sent)
 
     cdef void benchmark_quotes(self, int n_quotes) nogil:
+
         printf('benchmarking %d quotes\n', n_quotes)
         cdef SourceTickerCache ** tc_array = <SourceTickerCache **>malloc(sizeof(SourceTickerCache*) * self.n_unique_tickers)
         cyassert(tc_array != NULL)
@@ -146,12 +148,16 @@ cdef class DataSourceTester(DatasourceAbstract):
         cdef long dt_now = datetime_nsnow()
         for i in range(n_quotes):
             j = random_int(0, self.n_unique_tickers)
-            self.protocol.send_new_quote(&tc_array[j].qmsg, send_no_copy=-1)
-            self.quotes_sent += 1
+            if self.protocol.send_new_quote(&tc_array[j].qmsg, send_no_copy=-1) > 0:
+                self.quotes_sent += 1
+            else:
+                self.quotes_sent_errors += 1
+                if self.quotes_sent_errors == 1:
+                    printf('First error occurred in %0.6fsec\n', timedelta_ns(datetime_nsnow(), dt_now, TIMEDELTA_SEC))
 
         cdef double duration = timedelta_ns(datetime_nsnow(), dt_now, TIMEDELTA_SEC)
         cdef double speed = n_quotes / duration
-        free(tc_array)
+        #free(tc_array)
         printf('Completed in %0.6fsec %0.1f quotes/sec\n', duration, speed)
 
 
@@ -164,7 +170,8 @@ cdef class DataSourceTester(DatasourceAbstract):
         self.on_activate_ncalls += 1
         printf(b'source_on_activate: active #%d registered, #%d reg errs\n', self.on_register_n_ok, self.on_register_n_err)
 
-        printf(b'source_on_activate: benchmark quotes\n')
+        printf(b'source_on_activate: benchmark quotes in 5 sec\n')
+        sleep_ns(5)
         self.benchmark_quotes(1000000)
         printf(b'source_on_activate: benchmark quotes done\n')
 
@@ -208,12 +215,15 @@ cdef class DataSourceTester(DatasourceAbstract):
 
             if self.zmq_poll_array[0].revents & ZMQ_POLLIN:
                 transport_data = self.transport_dealer.receive(&msg_size)
+                if transport_data != NULL:
 
-                rc = self.protocol.on_process_new_message(transport_data, msg_size)
-                if rc < 0:
-                    printf('protocol_source.on_process_new_message error: %d\n', rc)
+                    rc = self.protocol.on_process_new_message(transport_data, msg_size)
+                    if rc < 0:
+                        printf('protocol_source.on_process_new_message error: %d\n', rc)
 
-                self.transport_dealer.receive_finalize(transport_data)
+                    self.transport_dealer.receive_finalize(transport_data)
+                else:
+                    printf('protocol_source.on_process_new_message transport_data is NULL\n')
 
             else:
                 dt_now = datetime_nsnow()
@@ -236,3 +246,9 @@ cdef class DataSourceTester(DatasourceAbstract):
         # Exit and finalize
         #
         self.transport_dealer.close()
+
+        printf('DataSource stats:\n')
+        printf('\tInstruments registered: OK: %d, Errs: %d\n', self.on_register_n_ok, self.on_register_n_err)
+        printf('\tQuotes sent: %d\n', self.quotes_sent)
+        printf('\tQuotes errors: %d\n', self.quotes_sent_errors)
+

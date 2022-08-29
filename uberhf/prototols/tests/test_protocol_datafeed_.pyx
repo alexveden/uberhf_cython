@@ -168,10 +168,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
 
 
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 #cybreakpoint(1)
                 ps = ProtocolDataFeed(11, transport_s, transport_s_pub, None, feed_server)
@@ -282,10 +283,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -376,10 +378,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -472,10 +475,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -577,10 +581,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -676,10 +681,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -744,10 +750,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()
@@ -792,10 +799,11 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
             transport_s_pub = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
 
                 transport_s_pub = Transport(<uint64_t> ctx.underlying, URL_BIND_PUB, ZMQ_PUB, b'SRV', always_send_copy=True)
                 transport_c_sub = Transport(<uint64_t> ctx.underlying, URL_CONNECT_SUB, ZMQ_SUB, b'CLI', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 feed_client = FeedClientMock()
                 feed_server = UHFeedMock()

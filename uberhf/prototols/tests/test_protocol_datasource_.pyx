@@ -197,7 +197,8 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 source = DataSourceMock()
                 feed = UHFeedMock()
@@ -295,7 +296,8 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
             transport_c = None
             try:
                 transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_ROUTER, b'SRV', always_send_copy=True)
-                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', always_send_copy=True)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_DEALER, b'CLI', router_id=b'SRV', always_send_copy=True)
+                time.sleep(0.1)  # Sleep to make connection established, because transport_c is non-blocking!
 
                 source = DataSourceMock()
                 feed = UHFeedMock()

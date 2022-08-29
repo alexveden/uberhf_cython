@@ -3,7 +3,7 @@ from libc.string cimport memcpy, strlen, memset, strncpy
 from libc.stdio cimport printf
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.utils cimport strlcpy
-from uberhf.includes.asserts cimport cyassert
+from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.includes.uhfprotocols cimport *
 from zmq.error import ZMQError
 from libc.stdint cimport uint64_t
@@ -41,7 +41,15 @@ cdef class Transport:
     #     """
     #     pass
     #
-    def __cinit__(self, zmq_context_ptr, socket_endpoint, socket_type, transport_id, socket_timeout=100, sub_topic=None, always_send_copy=False):
+    def __cinit__(self,
+                  zmq_context_ptr,
+                  socket_endpoint,
+                  socket_type,
+                  transport_id,
+                  router_id=None,
+                  socket_timeout=100,
+                  sub_topic=None,
+                  always_send_copy=False):
         """
         Initialized ZeroMQ transport
 
@@ -56,6 +64,7 @@ cdef class Transport:
         :param socket_endpoint: const char* string or python byte string
         :param socket_type: ZMQ_PUB / ZMQ_SUB / ZMQ_ROUTER / ZMQ_DEALER
         :param transport_id: unique transport ID byte-string (5 MAX)
+        :param router_id: servers' transport ID, for  ZMQ_DEALER socket type connection
         :param socket_timeout: socket sync receive/send timeout (this typically does not affect zmq_poll!)
         :param sub_topic:
         :param always_send_copy: (for testing purposes), make always send a copy, because in unit test environment or coverage it could be a
@@ -74,17 +83,27 @@ cdef class Transport:
         self.msg_received = 0
         self.last_error = TRANSPORT_ERR_OK
 
-        assert len(transport_id) > 0, f'transport_topic must be a byte string of [1; {TRANSPORT_SENDER_SIZE-1}] size'
-        assert len(transport_id) <= TRANSPORT_SENDER_SIZE-1, f'transport_topic must be short, <= {TRANSPORT_SENDER_SIZE-1}'
-        self.transport_id_len = len(transport_id)
-        memcpy(self.transport_id, <char*>transport_id, self.transport_id_len)
-
-        cdef int linger = 2000                      # in milliseconds
-        cdef int rcv_timeout = <int>socket_timeout    # in milliseconds
-        cdef int router_mandatory = 1
+        assert len(transport_id) > 0, f'transport_id must be a byte string of [1; {TRANSPORT_SENDER_SIZE-1}] size'
+        assert len(transport_id) <= TRANSPORT_SENDER_SIZE-1, f'transport_id must be short, <= {TRANSPORT_SENDER_SIZE-1}'
+        strlcpy(self.transport_id, <char*>transport_id, TRANSPORT_SENDER_SIZE)
 
         self.socket_type = socket_type
-        self.socket = zmq_socket(self.context, self.socket_type)
+        if socket_type == ZMQ_DEALER:
+            #
+            # For this case ZMQ_DEALER = SHADOW ZMQ_ROUTER
+            #  Which is necessary for non-blocking mode when send error or overflow
+            if router_id is None:
+                raise ValueError(f'You must set valid `router_id` (i.e. transport_id of the server) to make this Transport connection work properly')
+
+            assert len(router_id) > 0, f'router_id must be a byte string of [1; {TRANSPORT_SENDER_SIZE - 1}] size'
+            assert len(router_id) <= TRANSPORT_SENDER_SIZE - 1, f'router_id must be short, <= {TRANSPORT_SENDER_SIZE - 1}'
+            strlcpy(self.router_id, <char *>router_id, TRANSPORT_SENDER_SIZE)
+            # Our dealer is 1-way router, but without blocking when high-water-mark overflow!
+            self.socket = zmq_socket(self.context, ZMQ_ROUTER)
+        else:
+            self.router_id[0] = b'\0'  # Just empty string
+            self.socket = zmq_socket(self.context, self.socket_type)
+
         self.always_send_copy = always_send_copy
 
         if self.socket == NULL:
@@ -93,21 +112,33 @@ cdef class Transport:
         cdef int result = 0
         if self.socket_type in [ZMQ_PUB, ZMQ_ROUTER]:
             if self.socket_type == ZMQ_ROUTER:
-                zmq_setsockopt(self.socket, ZMQ_ROUTER_MANDATORY, &router_mandatory, sizeof(int))
-                #zmq_setsockopt(self.socket, ZMQ_RCVTIMEO, &rcv_timeout, sizeof(int))
-                zmq_setsockopt(self.socket, ZMQ_SNDTIMEO, &rcv_timeout, sizeof(int))
+                # Set routing ID for a ZMQ_ROUTER to make SHADOW ZMQ_ROUTER (client side) work
+                zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(transport_id))
+                self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
+                self._socket_set_option(ZMQ_SNDTIMEO, <int>socket_timeout)
+                self._socket_set_option(ZMQ_IMMEDIATE, 1)
+                #self._socket_set_option(ZMQ_SNDHWM, 10)
+                self._socket_set_option(ZMQ_LINGER, 0)
             elif self.socket_type == ZMQ_PUB:
                 if sub_topic is not None:
                     raise ValueError(f'sub_topic applicable only for clients, ZMQ_SUB sockets')
+                self._socket_set_option(ZMQ_LINGER, 0)
 
             # Binding as server
             result = zmq_bind(self.socket, <char*>socket_endpoint)
         elif self.socket_type in [ZMQ_SUB, ZMQ_DEALER]:
             if self.socket_type == ZMQ_DEALER:
-                zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, self.transport_id_len)
+                self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
+                zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(self.transport_id))
 
-                zmq_setsockopt(self.socket, ZMQ_SNDTIMEO, &rcv_timeout, sizeof(int))
+                self._socket_set_option(ZMQ_IMMEDIATE, 1)
+                self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
+                self._socket_set_option(ZMQ_SNDTIMEO, socket_timeout)
+                self._socket_set_option(ZMQ_SNDHWM, 0)
+                self._socket_set_option(ZMQ_LINGER, 0)
+
             elif self.socket_type == ZMQ_SUB:
+                # Topics
                 if sub_topic is None:
                     zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, b'', 0)
                 elif isinstance(sub_topic, list):
@@ -116,7 +147,10 @@ cdef class Transport:
                 else:
                     zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, <char*>sub_topic, len(sub_topic))
 
-            zmq_setsockopt(self.socket, ZMQ_RCVTIMEO, &rcv_timeout, sizeof(int))
+                # General socket settings
+
+                self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
+                self._socket_set_option(ZMQ_LINGER, 0)
 
             # Connecting as client
             result = zmq_connect(self.socket, <char*>socket_endpoint)
@@ -125,6 +159,10 @@ cdef class Transport:
 
         if result != 0:
             raise ZMQError()
+
+    cdef _socket_set_option(self, int zmq_opt, int value):
+        cdef int v = value
+        zmq_setsockopt(self.socket, zmq_opt, &v, sizeof(int))
 
     cdef int get_last_error(self) nogil:
         """
@@ -159,18 +197,18 @@ cdef class Transport:
 
         return zmq_strerror(errnum)
 
-    cdef int _send_set_error(self, int err_code, void* free_data) nogil:
+    cdef int _send_set_error(self, int err_code, void* free_data, int no_copy) nogil:
         global zmq_free_count
         self.last_error = err_code
         self.msg_errors += 1
 
-        if free_data != NULL:
+        if free_data != NULL and no_copy == 1:
+            # Free data only when no_copy == 1. Those are skipped: no_copy=-1, no_copy=0
             if free_data == self.last_data_received_ptr:
                 # Trying to change data inplace, this is DEFINITELY dangerous
                 cyassert(free_data != self.last_data_received_ptr)  #f'Trying to send previously received data with no_copy=False, this is DEFINITELY dangerous'
 
             # Free the data to avoid memory leaks
-            #_zmq_free_data_callback(free_data, NULL)
             free(free_data)
             zmq_free_count += 1
 
@@ -195,23 +233,27 @@ cdef class Transport:
         cdef int rc = 0
 
         if self.socket == NULL:
-            return self._send_set_error(TRANSPORT_ERR_SOCKET_CLOSED, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_SOCKET_CLOSED, data, no_copy)
 
         if data == NULL:
-            return self._send_set_error(TRANSPORT_ERR_NULL_DATA, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_NULL_DATA, data,  no_copy)
 
         if size < sizeof(TransportHeader):
-            return self._send_set_error(TRANSPORT_ERR_BAD_SIZE, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_BAD_SIZE, data, no_copy)
 
         # Sending dealer ID for ZMQ_ROUTER is mandatory!
         if self.socket_type == ZMQ_ROUTER and (topic_or_dealer == NULL or topic_or_dealer[0] == b'\0'):
-            return self._send_set_error(TRANSPORT_ERR_NULL_DEALERID, data if no_copy else NULL)
+            return self._send_set_error(TRANSPORT_ERR_NULL_DEALERID, data, no_copy)
 
         if topic_or_dealer != NULL and topic_or_dealer[0] != b'\0':
             rc = zmq_send(self.socket, topic_or_dealer, strlen(topic_or_dealer), ZMQ_SNDMORE)
-
             if rc == -1:
-                return self._send_set_error(TRANSPORT_ERR_ZMQ, data if no_copy else NULL)
+                return self._send_set_error(TRANSPORT_ERR_ZMQ, data, no_copy)
+        elif self.socket_type == ZMQ_DEALER:
+            rc = zmq_send(self.socket, self.router_id, strlen(self.router_id), ZMQ_SNDMORE)
+            if rc == -1:
+                # Don't free the data assuming that it's a job for ZMQ
+                return self._send_set_error(TRANSPORT_ERR_ZMQ, NULL, no_copy)
 
         cdef zmq_msg_t msg
         cdef TransportHeader* hdr = <TransportHeader*>data
@@ -248,7 +290,7 @@ cdef class Transport:
         # Sending failure
         if rc == -1:
             # Don't free the data assuming that it's a job for ZMQ
-            return self._send_set_error(TRANSPORT_ERR_ZMQ, NULL)
+            return self._send_set_error(TRANSPORT_ERR_ZMQ, NULL, no_copy)
 
         cyassert(<size_t>rc == size)
 
@@ -348,7 +390,7 @@ cdef class Transport:
                 rc = zmq_msg_close(&self.last_msg)
                 cyassert(rc == 0)
 
-        if self.socket_type == ZMQ_DEALER and msg_part != 1:
+        if self.socket_type == ZMQ_DEALER and msg_part != 2:
             return self._receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
         elif self.socket_type == ZMQ_ROUTER and msg_part != 2:
             return self._receive_set_error(TRANSPORT_ERR_BAD_PARTSCOUNT, size, 1)
@@ -372,7 +414,7 @@ cdef class Transport:
 
         # Not finalized receive but closing socket!
         if self.last_data_received_ptr != NULL:
-            self.receive_finalize(self.last_data_received_ptr)
+           self.receive_finalize(self.last_data_received_ptr)
 
         if self.socket != NULL:
             zmq_setsockopt(self.socket, ZMQ_LINGER, &timeout, sizeof(int))
