@@ -15,6 +15,10 @@ cdef class ProtocolDataFeed(ProtocolBase):
     cdef UHFeedAbstract feed_server
     cdef Transport pubsub_transport
 
+    cdef void initialize_client(self, ConnectionState * cstate) nogil
+    cdef void activate_client(self, ConnectionState * cstate) nogil
+    cdef void disconnect_client(self, ConnectionState * cstate) nogil
+
     # From client to server via dealer - router
     cdef int send_subscribe(self, char * v2_ticker) nogil
     cdef int send_unsubscribe(self, char * v2_ticker) nogil

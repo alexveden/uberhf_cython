@@ -44,6 +44,66 @@ cdef class ProtocolDataFeed(ProtocolBase):
         self.pubsub_transport = transport_pubsub
         self.module_subs_id = <int>module_id
 
+
+    cdef void initialize_client(self, ConnectionState * cstate) nogil:
+        """
+        Initialization of the new connection
+
+        - server gets this command when the client requests: send_initialize()
+        - client gets this command when the server reply on_initialize()
+
+        So server can set its internal state of the client, and the client can begin initialization sequence or just send_activate()
+
+        This is client/server method!      
+
+        :param cstate: 
+        :return: 
+        """
+        if self.is_server:
+            self.feed_server.feed_on_initialize(cstate.sender_id)
+        else:
+            self.feed_client.feed_on_initialize()
+            ProtocolBase.send_activate(self)
+
+
+    cdef void activate_client(self, ConnectionState * cstate) nogil:
+        """
+        Activation of the initialized connection
+
+         - server gets this command when the client requests: send_activate()
+         - client gets this command when the server reply on_activate()
+
+        So server can set its internal state of the client, and the protocol goes into active state
+
+        This is client/server method!     
+
+        :param cstate: 
+        :return: 
+        """
+        if self.is_server:
+            self.feed_server.feed_on_activate(cstate.sender_id)
+        else:
+            self.feed_client.feed_on_activate()
+
+
+    cdef void disconnect_client(self, ConnectionState * cstate) nogil:
+        """
+        Set internal connection state as disconnected, this method should also be overridden by child classes for additional logic
+
+        This is client/server method!     
+
+        :param cstate: 
+        :return: 
+        """
+        # Calling super() method is mandatory!
+        ProtocolBase.disconnect_client(self, cstate)
+
+        if self.is_server:
+            self.feed_server.feed_on_disconnect(cstate.sender_id)
+        else:
+            self.feed_client.feed_on_disconnect()
+
+
     cdef int send_subscribe(self, char * v2_ticker) nogil:
         cyassert(self.is_server == 0)  # Only clients allowed
         return self._send_subscribe(b'', v2_ticker, -1, 1)

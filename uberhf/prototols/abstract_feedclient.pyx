@@ -20,5 +20,11 @@ cdef class FeedClientAbstract:
     cdef void feed_on_instrumentinfo(self, int instrument_index) nogil:
         return
 
+    cdef void feed_on_initialize(self) nogil:
+        return
+
     cdef void feed_on_activate(self) nogil:
+        return
+
+    cdef void feed_on_disconnect(self) nogil:
         return

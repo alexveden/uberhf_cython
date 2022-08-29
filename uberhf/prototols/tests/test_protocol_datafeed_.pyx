@@ -30,6 +30,10 @@ cdef class UHFeedMock(UHFeedAbstract):
     cdef int n_unsubs
     cdef int n_errors
     cdef int n_tickers
+    cdef int n_on_initialize
+    cdef int n_on_activate
+    cdef int n_on_disconnect
+
 
     def __cinit__(self):
         self.hm_tickers = HashMap(50)
@@ -37,6 +41,18 @@ cdef class UHFeedMock(UHFeedAbstract):
         self.n_unsubs = 0
         self.n_errors = 0
         self.n_tickers = 0
+        self.n_on_activate = 0
+        self.n_on_initialize = 0
+        self.n_on_disconnect = 0
+
+    cdef void feed_on_initialize(self, char * feed_id) nogil:
+        self.n_on_initialize += 1
+
+    cdef void feed_on_activate(self, char * feed_id) nogil:
+        self.n_on_activate += 1
+
+    cdef void feed_on_disconnect(self, char * feed_id) nogil:
+        self.n_on_disconnect += 1
 
     cdef void register_datafeed_protocol(self, object protocol):
         self.protocol = <ProtocolDataFeed> protocol
@@ -66,6 +82,10 @@ cdef class FeedClientMock(FeedClientAbstract):
     cdef int n_on_status
     cdef int n_quotes_upd
     cdef int n_iinfo_upd
+    cdef int n_on_initialize
+    cdef int n_on_activate
+    cdef int n_on_disconnect
+
 
     def __cinit__(self):
         self.hm_tickers = HashMap(50)
@@ -76,6 +96,19 @@ cdef class FeedClientMock(FeedClientAbstract):
         self.n_on_status = 0
         self.n_quotes_upd = 0
         self.n_iinfo_upd = 0
+        self.n_on_activate = 0
+        self.n_on_initialize = 0
+        self.n_on_disconnect = 0
+
+
+    cdef void feed_on_initialize(self) nogil:
+        self.n_on_initialize += 1
+
+    cdef void feed_on_activate(self) nogil:
+        self.n_on_activate += 1
+
+    cdef void feed_on_disconnect(self) nogil:
+        self.n_on_disconnect += 1
 
     cdef void register_datafeed_protocol(self, object protocol):
         self.protocol = <ProtocolDataFeed> protocol
@@ -235,14 +268,13 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                             assert pc.send_unsubscribe(b'RU.F.RTS') > 0
                             assert pc.send_unsubscribe(b'RU.F.Si') > 0
                             was_subscribed = False
-
-                        #assert pc.send_disconnect() >  0
+                            assert pc.send_disconnect() >  0
                 #
                 # Check how core methods are called
                 #
                 assert was_active
-                assert cstate.status == ProtocolStatus.UHF_ACTIVE, int(cstate.status)
-                assert sstate.status == ProtocolStatus.UHF_ACTIVE, int(sstate.status)
+                assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
+                assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
 
 
                 assert feed_server.n_subs == 2
@@ -253,6 +285,13 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                 assert feed_client.n_errors == 1
                 assert feed_client.n_tickers == 0, feed_client.n_tickers
                 assert feed_server.n_tickers == 0, feed_server.n_tickers
+
+                assert feed_client.n_on_initialize == 1
+                assert feed_server.n_on_initialize == 1
+                assert feed_client.n_on_activate == 1
+                assert feed_server.n_on_activate == 1
+                assert feed_client.n_on_disconnect == 1
+                assert feed_server.n_on_disconnect == 1
             except:
                 raise
             finally:
@@ -338,6 +377,7 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
 
                         dt_prev_call = dt_now
 
+                    print(cstate.status)
                     if cstate.status == ProtocolStatus.UHF_ACTIVE and sstate.status == ProtocolStatus.UHF_ACTIVE:
                         was_active = True
 
@@ -371,6 +411,7 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
         cdef long dt_prev_call
         cdef long dt_now
         was_active = False
+        was_initstatus = False
         with zmq.Context() as ctx:
             transport_s = None
             transport_c = None
@@ -404,6 +445,9 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                 cstate = pc.get_state(b'')
                 sstate = ps.get_state(b'CLI')
 
+                # Still can emit status even if no valid connection
+                self.assertGreater(ps.send_source_status(b'SRC1', ProtocolStatus.UHF_ACTIVE), 0)
+
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
 
@@ -433,6 +477,10 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
 
                         dt_prev_call = dt_now
 
+                    if cstate.status == ProtocolStatus.UHF_INITIALIZING and not was_initstatus:
+                        self.assertGreater(ps.send_source_status(b'SRC1', ProtocolStatus.UHF_ACTIVE), 0)
+                        was_initstatus = True
+
                     if cstate.status == ProtocolStatus.UHF_ACTIVE and sstate.status == ProtocolStatus.UHF_ACTIVE:
                         was_active = True
                         assert ps.send_source_status(NULL, ProtocolStatus.UHF_ACTIVE) == PROTOCOL_ERR_ARG_ERR
@@ -445,7 +493,8 @@ class CyProtocolDataFeedBaseTestCase(unittest.TestCase):
                 assert cstate.status == ProtocolStatus.UHF_INACTIVE, int(cstate.status)
                 assert sstate.status == ProtocolStatus.UHF_INACTIVE, int(sstate.status)
 
-                assert feed_client.n_on_status == 1
+                assert was_initstatus
+                assert feed_client.n_on_status == 3, feed_client.n_on_status
             except:
                 raise
             finally:

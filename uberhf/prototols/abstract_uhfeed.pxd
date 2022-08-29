@@ -14,4 +14,7 @@ cdef class UHFeedAbstract:
     cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil
+
+    cdef void feed_on_initialize(self, char * feed_id) nogil
     cdef void feed_on_activate(self, char * feed_id) nogil
+    cdef void feed_on_disconnect(self, char * feed_id) nogil
