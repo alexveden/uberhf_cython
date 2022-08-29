@@ -33,7 +33,7 @@ cdef class ProtocolBase:
         :param heartbeat_interval_sec: heartbeat interval, in seconds (fractional allowed too!)
         :return: 
         """
-        assert module_id >0 and module_id < 40, 'Module ID must be >0 and < 40'
+        assert module_id >0 and module_id <= 40, 'Module ID must be >0 and <= 40'
         assert heartbeat_interval_sec > 0 and heartbeat_interval_sec < 300, 'heartbeat_interval_sec expected between (0, 300) seconds'
 
         self.protocol_id = protocol_id

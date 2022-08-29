@@ -536,9 +536,11 @@ cdef class SharedQuotesCache:
 
         if self.shmem_fd != -1:
             close(self.shmem_fd)
+            self.shmem_fd = -1
 
         if self.lock_fd != -1:
             close(self.lock_fd)
+            self.lock_fd = -1
 
         if self.lock_acquired:
             lock.release()

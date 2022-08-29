@@ -48,5 +48,12 @@ cdef class UHFeedAbstract:
         """
         return
 
+    cdef void feed_on_activate(self, char * feed_id) nogil:
+        """
+        Feed completed initialization and ready to activate
+        :return: 
+        """
+        return
+
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil:
         return -1

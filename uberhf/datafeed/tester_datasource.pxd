@@ -49,4 +49,6 @@ cdef class DataSourceTester(DatasourceAbstract):
 
     cdef int main(self) nogil
 
+    cdef void close(self)
+
     cdef void benchmark_quotes(self, int n_quotes) nogil

@@ -99,10 +99,15 @@ cdef class DataSourceTester(DatasourceAbstract):
         assert self.hm_tickers.count() == n_unique_tickers
         print(f'#{self.hm_tickers.count()} unique random tickers were generated')
 
-    def __dealloc__(self):
-        # Memory cleanup
+    cdef void close(self):
         if self.transport_dealer is not None:
             self.transport_dealer.close()
+            self.transport_dealer = None
+
+    def __dealloc__(self):
+        # Memory cleanup
+        self.close()
+
 
     cdef void register_datasource_protocol(self, object protocol):
         self.protocol = <ProtocolDataSource> protocol

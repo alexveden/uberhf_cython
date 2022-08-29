@@ -5,7 +5,7 @@ from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.protocol_datafeed cimport ProtocolDataFeed
 from uberhf.prototols.transport cimport Transport
-from uberhf.includes.utils cimport datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns
+from uberhf.includes.utils cimport datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns, sleep_ns
 from .quotes_cache cimport SharedQuotesCache, QCRecord
 from libc.stdio cimport printf
 from uberhf.prototols.libzmq cimport *
@@ -28,6 +28,8 @@ cdef class UHFeed(UHFeedAbstract):
 
         self.transport_router = None
         self.transport_pub = None
+        self.quote_cache = None
+
         self.transport_router = Transport(<uint64_t>zmq_context_ptr, zmq_url_router, ZMQ_ROUTER, b'UFEED')
         self.transport_pub = Transport(<uint64_t>zmq_context_ptr, zmq_url_pub, ZMQ_PUB, b'UFEED')
 
@@ -46,11 +48,19 @@ cdef class UHFeed(UHFeedAbstract):
         self.zmq_poll_array[0] = [self.transport_router.socket, 0, ZMQ_POLLIN, 0]
         self.is_shutting_down = 0
 
-    def __dealloc__(self):
+    cdef void close(self):
         if self.transport_pub is not None:
             self.transport_pub.close()
+            self.transport_pub = None
         if self.transport_router is not None:
             self.transport_router.close()
+            self.transport_router = None
+        if self.quote_cache is not None:
+            self.quote_cache.close()
+            self.quote_cache = None
+
+    def __dealloc__(self):
+        self.close()
 
     cdef void register_datasource_protocol(self, object protocol):
         self.protocol_source = <ProtocolDataSource> protocol
@@ -104,7 +114,6 @@ cdef class UHFeed(UHFeedAbstract):
 
     cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil:
         cdef QCRecord * qr
-
         cdef int result_idx = self.quote_cache.source_on_quote(msg)
         if result_idx < 0:
             # TODO: log
@@ -123,6 +132,17 @@ cdef class UHFeed(UHFeedAbstract):
                     self.feed_errors += 1
                     # Error
                     pass
+
+    cdef void feed_on_activate(self, char * feed_id) nogil:
+        """
+        Feed completed initialization and ready to activate
+        
+        When new source connected, the UHFeed will send the status of all datasources initially
+        :return: 
+        """
+        printf(b'feed_on_activate: %s\n', feed_id)
+        for i in range(self.quote_cache.header.source_count):
+            self.protocol_feed.send_source_status(self.quote_cache.sources[i].data_source_id, self.quote_cache.sources[i].quotes_status)
 
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil:
         cdef int rc = self.quote_cache.feed_on_subscribe(v2_ticker, <uint64_t>client_life_id, is_subscribe)

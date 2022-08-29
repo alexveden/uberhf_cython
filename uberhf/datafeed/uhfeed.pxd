@@ -37,6 +37,9 @@ cdef class UHFeed(UHFeedAbstract):
     cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil
     cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
+    cdef void feed_on_activate(self, char * feed_id) nogil
     cdef int feed_on_subscribe(self, char * v2_ticker, unsigned int client_life_id, bint is_subscribe) nogil
 
     cdef int main(self) nogil
+
+    cdef void close(self)

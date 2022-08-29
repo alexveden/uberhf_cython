@@ -12,5 +12,6 @@ cdef class FeedClientAbstract:
 
     # Subscribed updates
     cdef void feed_on_quote(self, int instrument_index) nogil
-
     cdef void feed_on_instrumentinfo(self, int instrument_index) nogil
+
+    cdef void feed_on_activate(self) nogil
