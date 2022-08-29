@@ -56,7 +56,7 @@ ctypedef struct SourceTickerCache:
 cdef class DataSourceTester(DatasourceAbstract):
     def __cinit__(self, zmq_context_ptr, zmq_url_dealer, n_unique_tickers):
         self.transport_dealer = None
-        self.transport_dealer = Transport(<uint64_t> zmq_context_ptr, zmq_url_dealer, ZMQ_DEALER, b'DSTST')
+        self.transport_dealer = Transport(<uint64_t> zmq_context_ptr, zmq_url_dealer, ZMQ_DEALER, b'DSTST', router_id=b'UFEED')
         self.protocol = ProtocolDataSource(MODULE_ID_TEST_SRC, self.transport_dealer, self, None)
         self.zmq_poll_timeout = 50
         self.zmq_poll_array[0] = [self.transport_dealer.socket, 0, ZMQ_POLLIN, 0]

@@ -760,6 +760,9 @@ class CyTransportTestCase(unittest.TestCase):
                 transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
                 transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_SUB, b'CLI')
 
+                # socket_s = zmq.Socket.shadow(<uint64_t> transport_s.socket)
+                # self.assertEqual(b'bbb', socket_s.get(zmq.BINDTODEVICE))
+
                 # Do some sleep to make sure sub process went well
                 time.sleep(0.5)
                 #cybreakpoint(1)
@@ -796,6 +799,126 @@ class CyTransportTestCase(unittest.TestCase):
                 #
                 # # Finalizing the message
                 transport_c2.receive_finalize(pmsg)
+            except:
+                raise
+            finally:
+                if transport_s is not None:
+                    transport_s.close()
+                if transport_c is not  None:
+                    transport_c.close()
+                if transport_c2 is not None:
+                    transport_c2.close()
+
+
+    def test_simple_pub_sub_reverse_bind_pyzmq(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            socket_s = None
+            socket_c = None
+
+            try:
+                socket_s = ctx.socket(zmq.SUB)
+                socket_c = ctx.socket(zmq.PUB)
+
+                socket_s.subscribe('')
+                socket_s.set(zmq.RCVTIMEO, 500)
+
+                socket_s.bind("tcp://*:9002")
+                socket_c.connect("tcp://127.0.0.1:9002")
+                time.sleep(0.1)
+
+                # https://github.com/zeromq/pyzmq/issues/1650#issuecomment-1016261063
+                # I think there is a bug in libzmq when PUB connects and SUB binds, where the subscription does not propagate until a
+                # poll or recv is called for the first time. This is not a pyzmq issue, but a libzmq one.
+                # You can work around it by attempting a sub.poll(timeout=0) before you get started.
+                #
+                socket_s.poll(0)
+                time.sleep(0.1)
+
+                socket_c.send_multipart([b'ss', b'test'])
+
+                data = socket_s.recv_multipart()
+                assert [b'ss', b'test'] == data, data
+            except:
+                raise
+            finally:
+                if socket_s is not None:
+                    socket_s.close()
+                if socket_c is not  None:
+                    socket_c.close()
+
+    def test_simple_pub_sub_reverse_bind(self):
+        cdef char buffer[255]
+        cdef size_t buffer_size
+
+        cdef TestGenericMessage msg
+        cdef TestGenericMessage * pmsg
+
+        with zmq.Context() as ctx:
+            transport_c = None
+            transport_s = None
+            transport_c2 = None
+
+            try:
+
+                transport_s = Transport(<uint64_t> ctx.underlying, URL_BIND, ZMQ_SUB, b'SRV', swap_bindconnect=True, socket_timeout=500)
+                transport_c = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_PUB, b'CLI1', swap_bindconnect=True, socket_timeout=500)
+                transport_c2 = Transport(<uint64_t> ctx.underlying, URL_CONNECT, ZMQ_PUB, b'CLI2', swap_bindconnect=True, socket_timeout=500)
+                time.sleep(0.15)
+
+                # libzmq when PUB connects and SUB binds, where the subscription does not propagate until a
+                #       poll or recv is called for the first time (should be fine on production when poller is used!)
+                assert transport_s.receive(&buffer_size) == NULL
+                time.sleep(0.05)
+
+                msg.data = 777
+                self.assertGreater(transport_c.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False), 0)
+                assert transport_c.msg_sent == 1
+                time.sleep(0.05)
+
+                #self.assertGreater(transport_c.send(b'', &msg, sizeof(TestGenericMessage), no_copy=False), 0)
+
+                #time.sleep(0.05)
+                pmsg = <TestGenericMessage*>transport_s.receive(&buffer_size)
+                assert pmsg != NULL
+                assert transport_s.last_error == 0, transport_s.get_last_error_str(transport_s.get_last_error())
+                assert transport_s.get_last_error() == TRANSPORT_ERR_OK
+                assert transport_s.get_last_error_str(transport_s.get_last_error()) == b'No error, last operation succeeded'
+
+                assert buffer_size == sizeof(TestGenericMessage)
+                assert pmsg.data == 777
+                assert pmsg.header.magic_number == TRANSPORT_HDR_MGC
+                assert strcmp(pmsg.header.sender_id, b'CLI1') == 0
+
+                assert transport_s.last_error == 0
+                assert transport_s.last_msg_received_ptr != NULL
+                assert transport_s.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_s.receive_finalize(pmsg)
+
+                msg.data = 888
+                transport_c2.send(NULL, &msg, sizeof(TestGenericMessage), no_copy=False)
+
+                pmsg = <TestGenericMessage*>transport_s.receive(&buffer_size)
+                assert pmsg != NULL
+                assert buffer_size == sizeof(TestGenericMessage)
+                assert pmsg.data == 888
+                assert pmsg.header.magic_number == TRANSPORT_HDR_MGC
+                assert strcmp(pmsg.header.sender_id, b'CLI2') == 0
+
+                assert transport_s.last_error == 0
+                assert transport_s.last_msg_received_ptr != NULL
+                assert transport_s.last_data_received_ptr == pmsg
+                #
+                # # Finalizing the message
+                transport_s.receive_finalize(pmsg)
+
             except:
                 raise
             finally:

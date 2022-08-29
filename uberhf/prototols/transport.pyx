@@ -1,5 +1,5 @@
 from libc.stdlib cimport malloc, free
-from libc.string cimport memcpy, strlen, memset, strncpy
+from libc.string cimport memcpy, strlen, strcmp
 from libc.stdio cimport printf
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.utils cimport strlcpy
@@ -49,7 +49,8 @@ cdef class Transport:
                   router_id=None,
                   socket_timeout=100,
                   sub_topic=None,
-                  always_send_copy=False):
+                  always_send_copy=False,
+                  swap_bindconnect=False):
         """
         Initialized ZeroMQ transport
 
@@ -101,7 +102,7 @@ cdef class Transport:
             # Our dealer is 1-way router, but without blocking when high-water-mark overflow!
             self.socket = zmq_socket(self.context, ZMQ_ROUTER)
         else:
-            self.router_id[0] = b'\0'  # Just empty string
+            self.router_id[0] = b'\0'  # Just empty string (unused)
             self.socket = zmq_socket(self.context, self.socket_type)
 
         self.always_send_copy = always_send_copy
@@ -110,50 +111,65 @@ cdef class Transport:
             raise ZMQError()
 
         cdef int result = 0
-        if self.socket_type in [ZMQ_PUB, ZMQ_ROUTER]:
-            if self.socket_type == ZMQ_ROUTER:
-                # Set routing ID for a ZMQ_ROUTER to make SHADOW ZMQ_ROUTER (client side) work
-                zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(transport_id))
-                self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
-                self._socket_set_option(ZMQ_SNDTIMEO, <int>socket_timeout)
-                self._socket_set_option(ZMQ_IMMEDIATE, 1)
-                #self._socket_set_option(ZMQ_SNDHWM, 10)
-                self._socket_set_option(ZMQ_LINGER, 0)
-            elif self.socket_type == ZMQ_PUB:
-                if sub_topic is not None:
-                    raise ValueError(f'sub_topic applicable only for clients, ZMQ_SUB sockets')
-                self._socket_set_option(ZMQ_LINGER, 0)
+        if self.socket_type == ZMQ_ROUTER:
+            # Set routing ID for a ZMQ_ROUTER to make SHADOW ZMQ_ROUTER (client side) work
+            zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(transport_id))
+            self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
+            self._socket_set_option(ZMQ_SNDTIMEO, <int>socket_timeout)
+            self._socket_set_option(ZMQ_IMMEDIATE, 1)
+            #self._socket_set_option(ZMQ_SNDHWM, 10)
+            self._socket_set_option(ZMQ_LINGER, 0)
+            # Binding as server
+            result = zmq_bind(self.socket, <char *> socket_endpoint)
+        elif self.socket_type == ZMQ_DEALER:
+            self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
+            zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(self.transport_id))
+
+            self._socket_set_option(ZMQ_IMMEDIATE, 1)
+            self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
+            self._socket_set_option(ZMQ_SNDTIMEO, socket_timeout)
+            self._socket_set_option(ZMQ_SNDHWM, 0)
+            self._socket_set_option(ZMQ_LINGER, 0)
+            # Connecting as client
+            result = zmq_connect(self.socket, <char *> socket_endpoint)
+        elif self.socket_type == ZMQ_PUB:
+            if sub_topic is not None:
+                raise ValueError(f'sub_topic applicable only for clients, ZMQ_SUB sockets')
+
+            #self._socket_set_option(ZMQ_LINGER, 0)
+            self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
+            self._socket_set_option(ZMQ_SNDTIMEO, socket_timeout)
 
             # Binding as server
-            result = zmq_bind(self.socket, <char*>socket_endpoint)
-        elif self.socket_type in [ZMQ_SUB, ZMQ_DEALER]:
-            if self.socket_type == ZMQ_DEALER:
-                self._socket_set_option(ZMQ_ROUTER_MANDATORY, 1)
-                zmq_setsockopt(self.socket, ZMQ_ROUTING_ID, self.transport_id, len(self.transport_id))
+            if swap_bindconnect:
+                # Swapped behaviour
+                result = zmq_connect(self.socket, <char *> socket_endpoint)
+            else:
+                # Regular behaviour
+                result = zmq_bind(self.socket, <char *> socket_endpoint)
 
-                self._socket_set_option(ZMQ_IMMEDIATE, 1)
-                self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
-                self._socket_set_option(ZMQ_SNDTIMEO, socket_timeout)
-                self._socket_set_option(ZMQ_SNDHWM, 0)
-                self._socket_set_option(ZMQ_LINGER, 0)
+        elif self.socket_type == ZMQ_SUB:
+            # Topics
+            if sub_topic is None:
+                zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, b'', 0)
+            elif isinstance(sub_topic, list):
+                for s in sub_topic:
+                    zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, <char*>s, len(s))
+            else:
+                zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, <char*>sub_topic, len(sub_topic))
 
-            elif self.socket_type == ZMQ_SUB:
-                # Topics
-                if sub_topic is None:
-                    zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, b'', 0)
-                elif isinstance(sub_topic, list):
-                    for s in sub_topic:
-                        zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, <char*>s, len(s))
-                else:
-                    zmq_setsockopt(self.socket, ZMQ_SUBSCRIBE, <char*>sub_topic, len(sub_topic))
+            # General socket settings
+            self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
+            self._socket_set_option(ZMQ_SNDTIMEO, socket_timeout)
+            #self._socket_set_option(ZMQ_LINGER, 0)
 
-                # General socket settings
+            if swap_bindconnect:
+                # Swapped behaviour
+                result = zmq_bind(self.socket, <char *> socket_endpoint)
+            else:
+                # Regular behaviour
+                result = zmq_connect(self.socket, <char *> socket_endpoint)
 
-                self._socket_set_option(ZMQ_RCVTIMEO, socket_timeout)
-                self._socket_set_option(ZMQ_LINGER, 0)
-
-            # Connecting as client
-            result = zmq_connect(self.socket, <char*>socket_endpoint)
         else:
             raise NotImplementedError(f'Unsupported socket type: {self.socket_type}')
 
@@ -169,6 +185,9 @@ cdef class Transport:
         Get last error code of transport (if specific) or ZMQ 
         :return: 
         """
+        if self.last_error == TRANSPORT_ERR_OK:
+            return TRANSPORT_ERR_OK
+
         if self.last_error < -64000:
             return self.last_error
 
@@ -179,6 +198,9 @@ cdef class Transport:
         Get last error string of transport (if specific) or ZMQ 
         :return: 
         """
+        if self.last_error == TRANSPORT_ERR_OK:
+            return 'No error, last operation succeeded'
+
         if self.last_error < -64000:
             if self.last_error == TRANSPORT_ERR_BAD_SIZE:
                 return 'Transport data size has less than TransportHeader size'
@@ -247,6 +269,8 @@ cdef class Transport:
 
         if topic_or_dealer != NULL and topic_or_dealer[0] != b'\0':
             rc = zmq_send(self.socket, topic_or_dealer, strlen(topic_or_dealer), ZMQ_SNDMORE)
+            cybreakpoint(strcmp(self.transport_id, b'CLRB1') == 0)
+
             if rc == -1:
                 return self._send_set_error(TRANSPORT_ERR_ZMQ, data, no_copy)
         elif self.socket_type == ZMQ_DEALER:
@@ -359,6 +383,7 @@ cdef class Transport:
         # Make sure that previous call called receive_finalize()
         #    or protocol calls req_finalize() when it's done!!!
         cyassert(self.last_msg_received_ptr == NULL) #, 'Make sure that previous call called receive_finalize(), before next receive()'
+        cyassert(self.last_data_received_ptr == NULL)
 
         if self.socket == NULL:
             self.last_error = TRANSPORT_ERR_SOCKET_CLOSED
