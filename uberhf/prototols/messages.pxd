@@ -9,7 +9,7 @@ ctypedef struct Quote:
     double bid_size
     double ask_size
 
-ctypedef struct InstrumentInfo:
+ctypedef struct InstrumentInfoStruct:
     double theo_price
     double tick_size
     double min_lot_size
@@ -34,7 +34,7 @@ ctypedef struct ProtocolDSRegisterMessage:
     TransportHeader header
     char v2_ticker[V2_TICKER_MAX_LEN]
     uint64_t instrument_id
-    InstrumentInfo iinfo
+    InstrumentInfoStruct iinfo
     int error_code
     int instrument_index
 

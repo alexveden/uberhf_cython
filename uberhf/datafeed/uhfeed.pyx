@@ -1,6 +1,6 @@
 from libc.stdint cimport uint64_t
 from uberhf.includes.uhfprotocols cimport MODULE_ID_UHFEED, ProtocolStatus
-from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport Quote, InstrumentInfoStruct, ProtocolDSQuoteMessage
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.protocol_datafeed cimport ProtocolDataFeed
@@ -102,7 +102,7 @@ cdef class UHFeed(UHFeedAbstract):
             printf(b'source_on_disconnect: success %s\n', source_id)
             self.protocol_feed.send_source_status(source_id, ProtocolStatus.UHF_INACTIVE)
 
-    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
+    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil:
         cdef int rc = self.quote_cache.source_register_instrument(source_id, v2_ticker, instrument_id, iinfo)
         if rc < 0:
             # TODO: log

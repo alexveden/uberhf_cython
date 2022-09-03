@@ -135,7 +135,7 @@ cdef class ProtocolDataSource(ProtocolBase):
     #
     #  PROTOCOL SPECIFIC METHODS
     #
-    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
+    cdef int send_register_instrument(self, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil:
         """
         Data source client send registration request for all v2 tickers it's going to source
         
@@ -213,7 +213,7 @@ cdef class ProtocolDataSource(ProtocolBase):
                 # Error
                 msg_out.error_code = rc
                 msg_out.instrument_index = -1
-                memset(&msg_out.iinfo, 0, sizeof(InstrumentInfo))
+                memset(&msg_out.iinfo, 0, sizeof(InstrumentInfoStruct))
             else:
                 msg_out.error_code = 0  # All good, no error
                 msg_out.instrument_index = rc

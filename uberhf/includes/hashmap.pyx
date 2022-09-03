@@ -2,26 +2,12 @@
 from libc.string cimport memcpy, strlen, strcmp
 from uberhf.includes.asserts cimport cyassert
 
-cdef class HashMap:
+cdef class HashMapBase:
     """
     Default hashmap algorithm works with strings or structures which have 1st member as a char*
 
     Override __cinit__, item_compare, item_hash for customization!
     """
-    def __cinit__(self, int item_size, min_capacity=16):
-        self._new(item_size, HashMap.item_hash, HashMap.item_compare, min_capacity)
-
-    @staticmethod
-    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
-        return strcmp(<char*>a, <char*>b)
-
-    @staticmethod
-    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
-        return HashMap.hash_func(<char*>item, strlen(<char*>item), seed0, seed1)
-
-    @staticmethod
-    cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil:
-        return hashmap_sip(data, data_len, seed0, seed1)
 
     cdef void _new(self,
                    size_t item_size,
@@ -140,3 +126,19 @@ cdef class HashMap:
             hashmap_free(self._hash_map)
             self._hash_map = NULL
 
+
+cdef class HashMap(HashMapBase):
+    def __cinit__(self, int item_size, min_capacity=16):
+        self._new(item_size, HashMap.item_hash, HashMap.item_compare, min_capacity)
+
+    @staticmethod
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
+        return strcmp(<char*>a, <char*>b)
+
+    @staticmethod
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
+        return HashMap.hash_func(<char*>item, strlen(<char*>item), seed0, seed1)
+
+    @staticmethod
+    cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil:
+        return hashmap_sip(data, data_len, seed0, seed1)

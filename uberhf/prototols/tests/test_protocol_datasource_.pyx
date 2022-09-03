@@ -10,7 +10,7 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
-from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfoStruct
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport datetime_nsnow, sleep_ns, timedelta_ns, TIMEDELTA_SEC, timer_nsnow, TIMEDELTA_MILLI
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 URL_BIND = b'tcp://*:7100'
 URL_CONNECT = b'tcp://localhost:7100'
 
-cdef InstrumentInfo global_iinfo
+cdef InstrumentInfoStruct global_iinfo
 global_iinfo.tick_size = 10
 global_iinfo.min_lot_size = 5
 global_iinfo.margin_req = 100
@@ -69,7 +69,7 @@ cdef class UHFeedMock(UHFeedAbstract):
         self.on_disconnect_ncalls += 1
 
 
-    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
+    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil:
         cyassert(strcmp(source_id, b'CLI') == 0)
 
         if instrument_id == 4567:

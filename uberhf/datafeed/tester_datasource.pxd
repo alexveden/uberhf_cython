@@ -10,7 +10,7 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
-from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfoStruct
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport strlcpy

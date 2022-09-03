@@ -12,7 +12,7 @@ from uberhf.includes.asserts cimport cyassert
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 from uberhf.includes.utils cimport gen_lifetime_id
 from uberhf.datafeed.quotes_cache cimport SharedQuotesCache, QCRecord, QCSourceHeader
-from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport Quote, InstrumentInfoStruct, ProtocolDSQuoteMessage
 from posix.mman cimport shm_unlink
 
 class CyQuotesCacheTestCase(unittest.TestCase):
@@ -85,7 +85,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
         assert qc.source_initialize(b'12345', 12345) == 0
 
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -154,7 +154,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
 
     def test_source_register_instrument_errors(self):
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -229,7 +229,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
         assert qc.sources[0].quotes_status == ProtocolStatus.UHF_INACTIVE
 
 
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -249,7 +249,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
     def test_source_disconnect(self):
         qc = SharedQuotesCache(1234, 5, 3)
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -273,7 +273,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
     def test_source_on_quote(self):
         qc = SharedQuotesCache(777, 5, 3)
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -388,7 +388,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
     def test_source_client_connect_memory_sharing(self):
         qs = SharedQuotesCache(1234, 5, 3)
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -424,7 +424,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
     def test_source_client_get_quote(self):
         qs = SharedQuotesCache(1234, 5, 3)
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -502,7 +502,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
 
     def test_source_server_early_close(self):
         qs = SharedQuotesCache(1234, 5, 3)
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100
@@ -595,7 +595,7 @@ class CyQuotesCacheTestCase(unittest.TestCase):
     def test_source_subscribe(self):
         qc = SharedQuotesCache(1234, 5, 3)
 
-        cdef InstrumentInfo iinfo
+        cdef InstrumentInfoStruct iinfo
         iinfo.tick_size = 10
         iinfo.min_lot_size = 5
         iinfo.margin_req = 100

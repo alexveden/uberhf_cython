@@ -10,7 +10,7 @@ from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.asserts cimport cyassert, cybreakpoint
 from uberhf.prototols.protocol_base cimport ProtocolBase,  ProtocolBaseMessage, ConnectionState
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
-from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfo
+from uberhf.prototols.messages cimport ProtocolDSRegisterMessage, ProtocolDSQuoteMessage, InstrumentInfoStruct
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.abstract_datasource cimport DatasourceAbstract
 from uberhf.includes.utils cimport gen_lifetime_id, datetime_nsnow, TIMEDELTA_MILLI, timedelta_ns, strlcpy, random_int, TIMEDELTA_SEC, sleep_ns
@@ -20,7 +20,7 @@ import numpy as np
 cimport numpy as np
 from libc.stdio cimport printf
 
-cdef InstrumentInfo global_iinfo
+cdef InstrumentInfoStruct global_iinfo
 global_iinfo.tick_size = 10
 global_iinfo.min_lot_size = 5
 global_iinfo.margin_req = 100

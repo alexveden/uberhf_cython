@@ -2,7 +2,7 @@ from libc.stdint cimport uint64_t, uint16_t
 from uberhf.includes.hashmap cimport HashMap
 from libc.string cimport strcmp, strlen, strcpy
 from uberhf.includes.uhfprotocols cimport TRANSPORT_SENDER_SIZE, V2_TICKER_MAX_LEN, ProtocolStatus, TRANSPORT_HDR_MGC
-from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport Quote, InstrumentInfoStruct, ProtocolDSQuoteMessage
 
 
 
@@ -35,7 +35,7 @@ ctypedef struct QCRecord:
     int data_source_hidx
     uint64_t subscriptions_bits
     Quote quote
-    InstrumentInfo iinfo
+    InstrumentInfoStruct iinfo
     int magic_number
 
 ctypedef struct Name2Idx:
@@ -60,7 +60,7 @@ cdef class SharedQuotesCache:
     cdef QCRecord * records
 
     cdef int source_initialize(self, char * data_src_id, unsigned int data_source_life_id) nogil
-    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil
+    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil
     cdef int source_activate(self, char * data_src_id) nogil
     cdef int source_disconnect(self, char * data_src_id) nogil
     cdef int source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil

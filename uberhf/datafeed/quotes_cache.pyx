@@ -265,7 +265,7 @@ cdef class SharedQuotesCache:
         cyassert(<size_t>self.header.source_count == self.source_map.count())
         return src_i
 
-    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil:
+    cdef int source_register_instrument(self, char * data_src_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil:
         """
         Data source registers new instrument
         

@@ -7,7 +7,7 @@ from math import nan
 import numpy as np
 cimport numpy as np
 from uberhf.datafeed.quotes_cache cimport SharedQuotesCache, QCRecord, QCSourceHeader
-from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport Quote, InstrumentInfoStruct, ProtocolDSQuoteMessage
 
 cdef char * make_ticker(letter_arr):
     cdef char * buf = <char*>malloc(sizeof(char) * len(letter_arr) + 1)
@@ -46,7 +46,7 @@ cpdef main():
 
 
     cdef SharedQuotesCache qc = SharedQuotesCache(777, 5, n_unique_tickers)
-    cdef InstrumentInfo iinfo
+    cdef InstrumentInfoStruct iinfo
     iinfo.tick_size = 10
     iinfo.min_lot_size = 5
     iinfo.margin_req = 100

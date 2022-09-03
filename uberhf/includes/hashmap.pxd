@@ -52,18 +52,9 @@ cdef extern from "hashmapsrc.h"  nogil:
     bint hashmap_iter(hashmap *map, size_t *i, void **item)
 
 
-cdef class HashMap:
+cdef class HashMapBase:
     cdef hashmap* _hash_map
     cdef size_t item_size
-
-    @staticmethod
-    cdef int item_compare(const void *a, const void *b, void *udata) nogil
-
-    @staticmethod
-    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
-
-    @staticmethod
-    cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil
 
     cdef void _new(self,
                    size_t item_size,
@@ -78,3 +69,16 @@ cdef class HashMap:
     cdef void* delete(self, void *item)  nogil
     cdef bint iter(self, size_t *i, void **item)  nogil
 
+
+cdef class HashMap(HashMapBase):
+    """
+    Generic hash map with string keys
+    """
+    @staticmethod
+    cdef int item_compare(const void *a, const void *b, void *udata) nogil
+
+    @staticmethod
+    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
+
+    @staticmethod
+    cdef uint64_t hash_func(const void *data, size_t data_len, uint64_t seed0, uint64_t seed1) nogil

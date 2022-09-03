@@ -1,6 +1,6 @@
 from libc.stdint cimport uint64_t
 from uberhf.includes.uhfprotocols cimport V2_TICKER_MAX_LEN, TRANSPORT_SENDER_SIZE, ProtocolStatus
-from uberhf.prototols.messages cimport Quote, InstrumentInfo, ProtocolDSQuoteMessage
+from uberhf.prototols.messages cimport Quote, InstrumentInfoStruct, ProtocolDSQuoteMessage
 from uberhf.prototols.abstract_uhfeed cimport UHFeedAbstract
 from uberhf.prototols.protocol_datasource cimport ProtocolDataSource
 from uberhf.prototols.protocol_datafeed cimport ProtocolDataFeed
@@ -34,7 +34,7 @@ cdef class UHFeed(UHFeedAbstract):
     cdef void source_on_activate(self, char * source_id) nogil
     cdef void source_on_disconnect(self, char * source_id) nogil
 
-    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfo * iinfo) nogil
+    cdef int source_on_register_instrument(self, char * source_id, char * v2_ticker, uint64_t instrument_id, InstrumentInfoStruct * iinfo) nogil
     cdef void source_on_quote(self, ProtocolDSQuoteMessage * msg) nogil
 
     cdef void feed_on_initialize(self, char * feed_id) nogil

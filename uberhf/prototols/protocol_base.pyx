@@ -417,6 +417,7 @@ cdef class ProtocolBase:
         cdef ProtocolBaseMessage *msg = self._make_msg(cstate, msg_type, next_state)
         cyassert(msg != NULL)
         cstate.msg_sent += 1
+
         return self.transport.send(NULL, msg, sizeof(ProtocolBaseMessage), no_copy=True)
 
     cdef int _on_msg_reply(self,
