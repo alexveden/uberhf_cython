@@ -52,23 +52,55 @@ cdef class FIXBinaryMsg:
         self.header.tag_duplicates = 0
 
     cdef int _resize_data(self, uint16_t new_size) nogil:
-        if new_size >= USHRT_MAX:
+        """
+        Grow binary FIX data container
+        
+        :param new_size: size on data in bytes
+        :return: negative on error, positive on success
+        """
+        if new_size == USHRT_MAX and self.header.data_size == USHRT_MAX:
+            # Allow first max capacity resize request to pas
             return ERR_DATA_OVERFLOW
 
-        self.header.data_size = new_size
-        self._data = realloc(self._data, self.header.data_size)
+        # Only new_size increase allowed!
+        cyassert(new_size > self.header.data_size)
+
+        self._data = realloc(self._data, new_size + sizeof(FIXBinaryHeader))
         cyassert(self._data != NULL)
         if self._data == NULL:
             # Memory error!
             self.header = NULL
             return ERR_MEMORY_ERROR
+
         # We must reset pointers to values/header because self._data may be changed
         self.values = self._data + sizeof(FIXBinaryHeader)
         self.header = <FIXBinaryHeader *> self._data
+        self.header.data_size = new_size
         self.header.n_reallocs += 1
+        cyassert(self.header.magic_number == FIX_MAGIC)
         return 1
 
     cdef int set(self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        """
+        Set generic FIX tag to a value
+        
+        Example:
+            cdef int i = 123
+            cdef double f = 8907.889
+            cdef char c = b'V'
+            cdef char * s = b'my fancy string'
+
+            m.set(1, &i, sizeof(int), b'i')
+            m.set(2, &f, sizeof(double), b'f')
+            m.set(3, &c, sizeof(char), b'c')
+            m.set(4, s, strlen(s)+1, b's')
+        
+        :param tag:  tag number, except 0 and 35
+        :param value: tag value generic buffer
+        :param value_size: tag value size, char* must include \0 char i.e. strlen(s)+1
+        :param value_type: tag value type (indication for get() method, which must be aware of this type)        
+        :return: negative on error, positive on success 
+        """
         if tag == 0:
             return ERR_FIX_ZERO_TAG
         if tag == 35:
@@ -78,23 +110,25 @@ cdef class FIXBinaryMsg:
             return ERR_FIX_VALUE_TOOLONG
 
         cdef int rc = 0
+        cdef uint16_t last_position = self.header.last_position
 
-        cyassert(self.header.last_position <= USHRT_MAX)
-        #cybreakpoint(tag == 8193)
-        if USHRT_MAX-self.header.last_position <= <uint16_t>(value_size + sizeof(FIXRec)):
+        cyassert(last_position <= USHRT_MAX)
+
+        if USHRT_MAX-last_position <= <uint16_t>(value_size + sizeof(FIXRec)):
             return ERR_DATA_OVERFLOW
 
-        if self.header.last_position + value_size + sizeof(FIXRec) > self.header.data_size:
+        if last_position + value_size + sizeof(FIXRec) > self.header.data_size:
             # Check buffer size and resize if needed
             rc = self._resize_data(min(USHRT_MAX, self.header.data_size * 2))
             if rc < 0:
                 return rc
+            cyassert(self.header.last_position == last_position)
 
         cdef FIXRec * rec
         cdef FIXOffsetMap offset
 
         offset.tag = tag
-        offset.data_offset = self.header.last_position
+        offset.data_offset = last_position
 
         if self.tag_hashmap.set(&offset) != NULL:
             offset.data_offset = USHRT_MAX
@@ -114,6 +148,25 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int get(self, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
+        """
+        Get generic tag value by reference
+        
+        Example:
+            cdef int value = 123
+            m.set(11, &value, sizeof(int), b'i')
+    
+            cdef void * p_value = NULL
+            cdef uint16_t p_size = 0
+            cdef result = 0
+            if m.get(11, &p_value, &p_size, b'i') > 0:
+                result = (<int*>p_value)[0]
+        
+        :param tag: tag number, 0 not allowed, when 35 returns FIXBinaryMsg.msg_type (as char) 
+        :param value: pointer to void*  (NULL on error)
+        :param value_size: pointer to int (zero on error)
+        :param value_type: the same char value as given in set method
+        :return: positive on success, negative on error, zero if not found
+        """
         cdef FIXRec * rec
         cdef FIXOffsetMap offset
         offset.tag = tag
