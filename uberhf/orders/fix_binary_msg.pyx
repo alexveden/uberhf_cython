@@ -1,5 +1,5 @@
-from libc.stdlib cimport malloc, realloc, free
-from libc.string cimport memcpy
+from libc.stdlib cimport calloc, realloc, free
+from libc.string cimport memcpy, memset, strlen
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
 from libc.stdint cimport int8_t
@@ -11,7 +11,7 @@ DEF ERR_NOT_FOUND              =  0
 DEF ERR_FIX_DUPLICATE_TAG      = -1
 DEF ERR_FIX_TYPE_MISMATCH      = -2
 DEF ERR_FIX_VALUE_TOOLONG      = -3
-DEF ERR_FIX_TAG35_NOTALLOWED   = -4
+DEF ERR_FIX_NOT_ALLOWED        = -4
 DEF ERR_FIX_ZERO_TAG           = -5
 DEF ERR_DATA_OVERFLOW          = -6
 DEF ERR_MEMORY_ERROR           = -7
@@ -27,6 +27,7 @@ DEF ERR_GROUP_TAG_NOT_INGROUP  = -16
 DEF ERR_GROUP_NOT_COMPLETED    = -17
 DEF ERR_GROUP_TAG_WRONG_ORDER  = -18
 DEF ERR_GROUP_CORRUPTED        = -19
+
 
 
 
@@ -50,7 +51,8 @@ cdef class FIXTagHashMap(HashMapBase):
 cdef class FIXBinaryMsg:
     def __cinit__(self, char msg_type, uint16_t data_size):
         cdef uint16_t _data_size = max(data_size, 128)
-        self._data = malloc(sizeof(FIXBinaryHeader) + _data_size)
+        # Use calloc to set memory to zero!
+        self._data = calloc(sizeof(FIXBinaryHeader) + _data_size, 1)
         if self._data == NULL:
             raise MemoryError()
         self.values = self._data + sizeof(FIXBinaryHeader)
@@ -67,19 +69,39 @@ cdef class FIXBinaryMsg:
         self.header.n_reallocs = 0
         self.header.tag_duplicates = 0
 
-    cdef int _resize_data(self, uint16_t new_size) nogil:
+    cdef int _request_new_space(self, size_t extra_size) nogil:
         """
         Grow binary FIX data container
         
-        :param new_size: size on data in bytes
+        :param extra_size: size on data in bytes
         :return: negative on error, positive on success
         """
-        if new_size == USHRT_MAX and self.header.data_size == USHRT_MAX:
+        cyassert(self.header.last_position <= USHRT_MAX)
+
+        if <uint16_t>(USHRT_MAX - self.header.last_position) <= extra_size:
+            return ERR_DATA_OVERFLOW
+
+        cdef size_t data_size = self.header.data_size
+
+        if self.header.last_position + extra_size <= data_size:
+            return 1
+
+        cdef size_t new_size = min(USHRT_MAX, data_size * 2)
+
+        if new_size == USHRT_MAX and data_size == USHRT_MAX:
             # Allow first max capacity resize request to pas
             return ERR_DATA_OVERFLOW
 
         # Only new_size increase allowed!
-        cyassert(new_size > self.header.data_size)
+        cyassert(new_size > data_size)
+        cyassert(new_size <= USHRT_MAX)
+
+        cdef int open_group_offset = -1
+        cdef int open_group_tag = -1
+        if self.open_group != NULL:
+            # We have open group, keep offset between group and self.values if main pointer will be changed
+            open_group_offset = <void*>self.open_group - self.values
+            open_group_tag = self.open_group.fix_rec.tag
 
         self._data = realloc(self._data, new_size + sizeof(FIXBinaryHeader))
         cyassert(self._data != NULL)
@@ -88,11 +110,20 @@ cdef class FIXBinaryMsg:
             self.header = NULL
             return ERR_MEMORY_ERROR
 
+        # Zero memory as well, because realloc doesn't do this by default
+        memset(self._data + data_size + sizeof(FIXBinaryHeader), 0, new_size-data_size)
+
         # We must reset pointers to values/header because self._data may be changed
         self.values = self._data + sizeof(FIXBinaryHeader)
         self.header = <FIXBinaryHeader *> self._data
-        self.header.data_size = new_size
+        self.header.data_size = <uint16_t>new_size
         self.header.n_reallocs += 1
+
+        if self.open_group != NULL:
+            self.open_group = <GroupRec *>(self.values + open_group_offset)
+            cyassert(self.open_group.fix_rec.tag == open_group_tag)
+            cyassert(self.open_group.fix_rec.value_type == b'\x07')
+
         cyassert(self.header.magic_number == FIX_MAGIC)
         return 1
 
@@ -114,35 +145,29 @@ cdef class FIXBinaryMsg:
         :param tag:  tag number, except 0 and 35
         :param value: tag value generic buffer
         :param value_size: tag value size, char* must include \0 char i.e. strlen(s)+1
-        :param value_type: tag value type (indication for get() method, which must be aware of this type)        
+        :param value_type: tag value type (indication for get() method, which must be aware of this type), 
+                           types b'\x07' and '\x00' are not allowed, and reserved!        
         :return: negative on error, positive on success 
         """
         if self.open_group != NULL:
-            # TODO: implement group type check = 'x07', not allowed!
             return ERR_GROUP_NOT_FINISHED
+
+        if value_type == b'\x07' or value_type == b'\x00':
+            return ERR_FIX_NOT_ALLOWED
 
         if tag == 0:
             return ERR_FIX_ZERO_TAG
         if tag == 35:
             # MsgType must be set at constructor
-            return ERR_FIX_TAG35_NOTALLOWED
+            return ERR_FIX_NOT_ALLOWED
         if value_size > 255:
             return ERR_FIX_VALUE_TOOLONG
 
         cdef int rc = 0
         cdef uint16_t last_position = self.header.last_position
 
-        cyassert(last_position <= USHRT_MAX)
-
-        if USHRT_MAX-last_position <= <uint16_t>(value_size + sizeof(FIXRec)):
+        if self._request_new_space(value_size + sizeof(FIXRec)) < 0:
             return ERR_DATA_OVERFLOW
-
-        if last_position + value_size + sizeof(FIXRec) > self.header.data_size:
-            # Check buffer size and resize if needed
-            rc = self._resize_data(min(USHRT_MAX, self.header.data_size * 2))
-            if rc < 0:
-                return rc
-            cyassert(self.header.last_position == last_position)
 
         cdef FIXRec * rec
         cdef FIXOffsetMap offset
@@ -159,9 +184,18 @@ cdef class FIXBinaryMsg:
         # New value added successfully
         rec = <FIXRec*>(self.values + offset.data_offset)
 
+        # Assuming that the new memory should be set to zero
+        cyassert(rec.tag == 0)
+        cyassert(rec.value_type == b'\0')
+        cyassert(rec.value_len == 0)
+
         rec.tag = tag
         rec.value_type = value_type
         rec.value_len = value_size
+
+        if value_type == b's':
+            cyassert(strlen(<char*>value) + 1 == value_size)   # strlen mismatch, must include \0, and check if value != &((*char)some_string)
+            cyassert((<char*>value)[value_size-1] == b'\0')    # String must be null-terminated!
 
         memcpy(self.values + offset.data_offset + sizeof(FIXRec), value, value_size)
         self.header.last_position += sizeof(FIXRec) + value_size
@@ -189,7 +223,8 @@ cdef class FIXBinaryMsg:
         """
         if self.open_group != NULL:
             return ERR_GROUP_NOT_FINISHED
-        # TODO: implement group type check = 'x07', not allowed!
+        if value_type == b'\x07' or value_type == b'\x00':
+            return ERR_FIX_NOT_ALLOWED
 
         cdef FIXRec * rec
         cdef FIXOffsetMap offset
@@ -273,27 +308,21 @@ cdef class FIXBinaryMsg:
 
         cyassert(tags != NULL)
 
-
         cdef int rc = 0
+        cdef int base_len = sizeof(uint16_t) * n_tags + sizeof(uint16_t) * grp_n_elements
+
         cdef uint16_t last_position = self.header.last_position
 
-        cyassert(last_position <= USHRT_MAX)
-
-        # if USHRT_MAX - last_position <= <uint16_t> (value_size + sizeof(FIXRec)):
-        #     return ERR_DATA_OVERFLOW
-        #
-        # if last_position + value_size + sizeof(FIXRec) > self.header.data_size:
-        #     # Check buffer size and resize if needed
-        #     rc = self._resize_data(min(USHRT_MAX, self.header.data_size * 2))
-        #     if rc < 0:
-        #         return rc
-        #     cyassert(self.header.last_position == last_position)
+        if self._request_new_space(base_len + sizeof(GroupRec)) < 0:
+            return ERR_DATA_OVERFLOW
 
         cdef GroupRec * rec
         cdef FIXOffsetMap offset
 
         offset.tag = group_tag
         offset.data_offset = last_position
+
+        #cybreakpoint(group_tag == 20 and offset.data_offset == 0)
 
         if self.tag_hashmap.set(&offset) != NULL:
             offset.data_offset = USHRT_MAX
@@ -304,10 +333,15 @@ cdef class FIXBinaryMsg:
         # New value added successfully
         rec = <GroupRec *> (self.values + last_position)
 
+        # Check if the new memory block is zeroed
+        cyassert(rec.fix_rec.tag == 0)
+        cyassert(rec.fix_rec.value_type == b'\0')
+        cyassert(rec.fix_rec.value_len == 0)
+
         rec.fix_rec.tag = group_tag
         rec.fix_rec.value_type = b'\x07'  # Special type reserved for groups
         # This is a base length extra to sizeof(FIXRec)
-        rec.fix_rec.value_len = sizeof(uint16_t) * n_tags + sizeof(uint16_t) * grp_n_elements
+        rec.fix_rec.value_len = base_len
         rec.grp_n_elements = grp_n_elements
         rec.n_tags = n_tags
         rec.current_element = 0  # First iteration will make it 0
@@ -317,7 +351,7 @@ cdef class FIXBinaryMsg:
         cdef uint16_t i, j
         cdef uint16_t *fix_data_tags = <uint16_t *>(self.values + last_position + sizeof(GroupRec))
 
-        offset.data_offset = 0
+        offset.data_offset = USHRT_MAX
 
         for i in range(n_tags):
             cyassert(n_tags < 127)
@@ -357,6 +391,8 @@ cdef class FIXBinaryMsg:
         if group_tag != self.open_group.fix_rec.tag:
             return ERR_GROUP_NOT_MATCH
 
+        if self._request_new_space(value_size + sizeof(FIXRec)) < 0:
+            return ERR_DATA_OVERFLOW
 
         cdef uint16_t *fix_data_tags = <uint16_t *>(<void*>self.open_group + sizeof(GroupRec))
         cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void*>self.open_group + sizeof(GroupRec) + self.open_group.n_tags*sizeof(uint16_t))
@@ -406,9 +442,19 @@ cdef class FIXBinaryMsg:
 
         rec = <FIXRec *> (self.values + last_position)
 
+        # Check if the new memory block is zeroed
+        cyassert(rec.tag == 0)
+        cyassert(rec.value_type == b'\0')
+        cyassert(rec.value_len == 0)
+
         rec.tag = tag
         rec.value_type = value_type
         rec.value_len = value_size
+
+        #cybreakpoint(group_tag == 10 and tag == 17)
+        if value_type == b's':
+            cyassert(strlen(<char*>value) + 1 == value_size)   # strlen mismatch, must include \0, and check if value != &((*char)some_string)
+            cyassert((<char*>value)[value_size-1] == b'\0')    # String must be null-terminated!
 
         memcpy(self.values + last_position + sizeof(FIXRec), value, value_size)
         self.header.last_position += sizeof(FIXRec) + value_size
@@ -432,20 +478,26 @@ cdef class FIXBinaryMsg:
         cdef FIXOffsetMap offset
 
         offset.tag = group_tag
-        offset.data_offset = 0
+        offset.data_offset = USHRT_MAX
 
-        if self.tag_hashmap.get(&offset) == NULL:
+        cdef FIXOffsetMap * p_offset_found
+
+        p_offset_found =  <FIXOffsetMap*>self.tag_hashmap.get(&offset)
+        if p_offset_found == NULL:
             return ERR_NOT_FOUND
 
-        # New value added successfully
-        rec = <GroupRec *> (self.values + offset.data_offset)
+        cyassert(p_offset_found.data_offset < USHRT_MAX)
+        #cybreakpoint(group_tag == 10 and tag == 17)
 
-        cyassert(rec.n_tags > 0)
-        cyassert(rec.grp_n_elements > 0)
+        # New value added successfully
+        rec = <GroupRec *> (self.values + p_offset_found.data_offset)
 
         if rec.fix_rec.value_type != b'\x07':
             # Type mismatch
             return ERR_GROUP_CORRUPTED
+
+        cyassert(rec.n_tags > 0)
+        cyassert(rec.grp_n_elements > 0)
 
         if el_idx >= rec.grp_n_elements:
             return ERR_GROUP_EL_OVERFLOW
@@ -508,6 +560,9 @@ cdef class FIXBinaryMsg:
         if self.open_group.current_element != self.open_group.grp_n_elements-1:
             return ERR_GROUP_NOT_COMPLETED
         cdef uint16_t last_position = self.header.last_position
+
+        if self._request_new_space(sizeof(FIXRec)) < 0:
+            return ERR_DATA_OVERFLOW
 
         rec = <FIXRec *> (self.values + last_position)
 

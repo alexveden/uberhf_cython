@@ -109,6 +109,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef char c = b'V'
         cdef char * s = b'my fancy string'
         cdef FIXRec* rec
+        cdef void * p_value = NULL
+        cdef uint16_t p_size = 0
 
         cdef int prev_pos = m.header.last_position
         assert m.set(1, &i, sizeof(int), b'i') == 1
@@ -117,6 +119,11 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert rec.tag == 1
         assert rec.value_type == b'i'
         assert rec.value_len == sizeof(int)
+        assert m.get(1, &p_value, &p_size, b'i') == 1
+        assert p_size == sizeof(int)
+        assert (<int*>p_value)[0] == i
+
+
 
         prev_pos = sizeof(FIXRec) + sizeof(int)
         assert m.header.last_position == prev_pos
@@ -125,6 +132,10 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert rec.tag == 2
         assert rec.value_type == b'f'
         assert rec.value_len == sizeof(double)
+
+        assert m.get(2, &p_value, &p_size, b'f') == 1
+        assert p_size == sizeof(double)
+        assert (<double *> p_value)[0] == f
 
         prev_pos += sizeof(FIXRec) + sizeof(double)
         assert m.header.last_position == prev_pos
@@ -135,6 +146,10 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert rec.value_type == b'c'
         assert rec.value_len == sizeof(char)
 
+        assert m.get(3, &p_value, &p_size, b'c') == 1
+        assert p_size == sizeof(char)
+        assert (<char *> p_value)[0] == c
+
 
         prev_pos += sizeof(FIXRec) + sizeof(char)
         assert m.header.last_position == prev_pos
@@ -143,6 +158,10 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert rec.tag == 4
         assert rec.value_type == b's'
         assert rec.value_len == strlen(s)+1
+
+        assert m.get(4, &p_value, &p_size, b's') == 1
+        assert p_size == strlen(s)+1
+        assert strcmp((<char*>p_value), s) == 0
 
         prev_pos += sizeof(FIXRec) + strlen(s)+1
         assert m.header.last_position == prev_pos
@@ -494,6 +513,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert rec.value_len == 0
         assert rec.value_type == b'\0'
         assert m.open_group == NULL
+
+        self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), 1, f'i={i}')
 
     def test_group_start_errors__already_started(self):
         # Exact match no resize
@@ -919,3 +940,76 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         trec.tag = 5
 
         self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+
+
+    def test_groups_resize_and_multi_types(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
+
+        cdef void* value
+        cdef uint16_t value_size
+        cdef int t = 1
+        cdef uint16_t g_tags[4]
+
+        cdef int i = 123
+        cdef double f = 8907.889
+        cdef char c = b'V'
+        cdef char * s = b'my fancy string, it may be too long!'
+
+        cdef int n_elements = 5
+        while t < 100:
+
+            if t % 10 == 0:
+                g_tags[0] = t + 1
+                g_tags[1] = t + 3
+                g_tags[2] = t + 5
+                g_tags[3] = t + 7
+
+                self.assertEqual(m.group_start(t, n_elements, 4, g_tags), 1)
+                for k in range(n_elements):
+                    self.assertEqual(m.group_add_tag(t, t + 1, &i, sizeof(int), b'i'), 1, f't={t} k={k}')
+                    self.assertEqual(m.group_add_tag(t, t + 3, &f, sizeof(double), b'f'), 1)
+                    self.assertEqual(m.group_add_tag(t, t + 5, &c, sizeof(char), b'c'), 1)
+                    self.assertEqual(m.group_add_tag(t, t + 7, s, strlen(s)+1, b's'), 1, f'k={k}')
+                self.assertEqual(m.group_finish(t), 1, f't={t} k={k}')
+
+
+                for k in range(n_elements):
+                    self.assertEqual(m.group_get(t, k, t + 1, &value, &value_size, b'i'), 1,
+                                     f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert (<int *> value)[0] == i
+                    assert value_size == sizeof(int)
+
+                    self.assertEqual(m.group_get(t, k, t + 7, &value, &value_size, b's'), 1, f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert value_size == strlen(s) + 1
+                    #cybreakpoint(strcmp((<char *> value), s) != 0)
+                    assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
+
+                t += 10
+            else:
+                #m.set(t, &t, sizeof(int), b'i')
+                t += 1
+
+
+        for t in range(1, 100):
+            if t % 10 == 0:
+                for k in range(n_elements):
+                    self.assertEqual(m.group_get(t, k, t + 1, &value, &value_size, b'i'), 1, f't={t} k={k}')
+                    assert (<int*>value)[0] == i
+                    assert value_size == sizeof(int)
+
+                    self.assertEqual(m.group_get(t, k, t + 3, &value, &value_size, b'f'), 1)
+                    assert (<double *> value)[0] == f
+                    assert value_size == sizeof(double)
+
+                    self.assertEqual(m.group_get(t, k, t + 5, &value, &value_size, b'c'), 1)
+                    assert (<char *> value)[0] == c
+                    assert value_size == sizeof(char)
+
+                    self.assertEqual(m.group_get(t, k, t + 7, &value, &value_size, b's'), 1, f'k={k}')
+                    assert value_size == strlen(s) + 1
+                    assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
+

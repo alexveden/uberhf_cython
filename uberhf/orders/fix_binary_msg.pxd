@@ -47,7 +47,7 @@ cdef class FIXBinaryMsg:
     cdef FIXTagHashMap tag_hashmap
     cdef FIXBinaryHeader* header
 
-    cdef int _resize_data(self, uint16_t new_size) nogil
+    cdef int _request_new_space(self, size_t extra_size) nogil
     cdef int set(self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil
     cdef int get(self, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
 
