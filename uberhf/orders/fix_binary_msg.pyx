@@ -2,7 +2,7 @@ from libc.stdlib cimport malloc, realloc, free
 from libc.string cimport memcpy
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
-
+from libc.stdint cimport int8_t
 DEF FIX_MAGIC = 22093
 
 
@@ -15,6 +15,18 @@ DEF ERR_FIX_TAG35_NOTALLOWED   = -4
 DEF ERR_FIX_ZERO_TAG           = -5
 DEF ERR_DATA_OVERFLOW          = -6
 DEF ERR_MEMORY_ERROR           = -7
+DEF ERR_GROUP_NOT_FINISHED     = -8
+DEF ERR_GROUP_EMPTY            = -9
+DEF ERR_GROUP_DUPLICATE_TAG    = -10
+DEF ERR_GROUP_NOT_STARTED      = -11
+DEF ERR_GROUP_NOT_MATCH        = -12
+DEF ERR_GROUP_TOO_MANY         = -13
+DEF ERR_GROUP_START_TAG_EXPECTED  = -14
+DEF ERR_GROUP_EL_OVERFLOW      = -15
+DEF ERR_GROUP_TAG_NOT_INGROUP  = -16
+DEF ERR_GROUP_NOT_COMPLETED    = -17
+
+
 
 cdef class FIXTagHashMap(HashMapBase):
     """
@@ -42,6 +54,8 @@ cdef class FIXBinaryMsg:
         self.values = self._data + sizeof(FIXBinaryHeader)
 
         self.tag_hashmap = FIXTagHashMap.__new__(FIXTagHashMap)
+
+        self.open_group = NULL
 
         self.header = <FIXBinaryHeader*>self._data
         self.header.magic_number = FIX_MAGIC
@@ -101,6 +115,10 @@ cdef class FIXBinaryMsg:
         :param value_type: tag value type (indication for get() method, which must be aware of this type)        
         :return: negative on error, positive on success 
         """
+        if self.open_group != NULL:
+            # TODO: implement group type check = 'x07', not allowed!
+            return ERR_GROUP_NOT_FINISHED
+
         if tag == 0:
             return ERR_FIX_ZERO_TAG
         if tag == 35:
@@ -167,6 +185,10 @@ cdef class FIXBinaryMsg:
         :param value_type: the same char value as given in set method
         :return: positive on success, negative on error, zero if not found
         """
+        if self.open_group != NULL:
+            return ERR_GROUP_NOT_FINISHED
+        # TODO: implement group type check = 'x07', not allowed!
+
         cdef FIXRec * rec
         cdef FIXOffsetMap offset
         offset.tag = tag
@@ -174,6 +196,7 @@ cdef class FIXBinaryMsg:
         # Fill default return values
         value[0] = NULL
         value_size[0] = 0
+        # TODO: implement value_type = 0, for skipping type checks
 
         if tag == 0:
             return ERR_FIX_ZERO_TAG
@@ -204,6 +227,246 @@ cdef class FIXBinaryMsg:
 
         value_size[0] = rec.value_len
         value[0] = self.values + p_offset_found.data_offset + sizeof(FIXRec)
+        return 1
+
+    cdef int group_start(self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil:
+        """
+        
+        :param group_tag: 
+        :param grp_n_elements: 
+        :param n_tags: 
+        :param tags: 
+        :return: 
+        """
+
+        """
+        Group data alignment
+        struct GroupRec
+            FIXRec fix_rec
+                uint16_t tag
+                char value_type
+                uint16_t value_len
+            uint16_t grp_n_elements
+            uint16_t n_tags
+            uint16_t * group_tags_values         # List of all tags in a group (must be n_tags length)
+                uint16_t *tag1 (is mandatory!)
+                ...
+                uint16_t *tag_n (len n_tags)
+            uint16_t * group_elements_offsets     # Used for fast group search by index
+                uint16_t *el_1 offset
+                ...
+                uint16_t *el_n offset (len grp_n_elements)
+        """
+
+        if self.open_group != NULL:
+            return ERR_GROUP_NOT_FINISHED
+        if grp_n_elements < 1:
+            return ERR_GROUP_EMPTY
+        if n_tags < 1:
+            return ERR_GROUP_EMPTY
+        if n_tags >= 127:
+            return ERR_GROUP_TOO_MANY
+
+        cyassert(tags != NULL)
+
+
+        cdef int rc = 0
+        cdef uint16_t last_position = self.header.last_position
+
+        cyassert(last_position <= USHRT_MAX)
+
+        # if USHRT_MAX - last_position <= <uint16_t> (value_size + sizeof(FIXRec)):
+        #     return ERR_DATA_OVERFLOW
+        #
+        # if last_position + value_size + sizeof(FIXRec) > self.header.data_size:
+        #     # Check buffer size and resize if needed
+        #     rc = self._resize_data(min(USHRT_MAX, self.header.data_size * 2))
+        #     if rc < 0:
+        #         return rc
+        #     cyassert(self.header.last_position == last_position)
+
+        cdef GroupRec * rec
+        cdef FIXOffsetMap offset
+
+        offset.tag = group_tag
+        offset.data_offset = last_position
+
+        if self.tag_hashmap.set(&offset) != NULL:
+            offset.data_offset = USHRT_MAX
+            self.header.tag_duplicates += 1
+            self.tag_hashmap.set(&offset)
+            return ERR_FIX_DUPLICATE_TAG
+
+        # New value added successfully
+        rec = <GroupRec *> (self.values + last_position)
+
+        rec.fix_rec.tag = group_tag
+        rec.fix_rec.value_type = b'\x07'  # Special type reserved for groups
+        rec.fix_rec.value_len = 0         # <- this will be overwritten after group finish
+        rec.grp_n_elements = grp_n_elements
+        rec.n_tags = n_tags
+        rec.current_element = -1  # First iteration will make it 0
+        self.open_group = rec
+
+        cdef uint16_t i, j
+        cdef uint16_t *fix_data_tags = <uint16_t *>(self.values + last_position + sizeof(GroupRec))
+
+        offset.data_offset = 0
+
+        for i in range(n_tags):
+            cyassert(n_tags < 127)
+            # Quick check for duplicates
+            if tags[i] == group_tag:
+                return ERR_GROUP_DUPLICATE_TAG
+
+            for j in range(n_tags):
+                if i != j and tags[i] == tags[j]:
+                    return ERR_GROUP_DUPLICATE_TAG
+
+            offset.tag = tags[i]
+            if self.tag_hashmap.get(&offset) != NULL:
+                # Group tags must be unique across global tags!
+                return ERR_GROUP_DUPLICATE_TAG
+
+            fix_data_tags[i] = tags[i]
+
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (self.values + last_position + sizeof(GroupRec) + n_tags*sizeof(uint16_t))
+
+        for i in range(grp_n_elements):
+            fix_data_el_offsets[i] = USHRT_MAX
+
+        self.header.last_position += sizeof(GroupRec) + n_tags*sizeof(uint16_t) + grp_n_elements*sizeof(uint16_t)
+        return 1
+
+    cdef int group_add_tag(self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        if self.open_group == NULL:
+            return ERR_GROUP_NOT_STARTED
+        if group_tag != self.open_group.fix_rec.tag:
+            return ERR_GROUP_NOT_MATCH
+
+        cdef uint16_t *fix_data_tags = <uint16_t *>(<void*>self.open_group + sizeof(GroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void*>self.open_group + sizeof(GroupRec) + self.open_group.n_tags*sizeof(uint16_t))
+        cdef uint16_t last_position = self.header.last_position
+        cdef bint is_tag_exist = False
+
+        if self.open_group.current_element == -1:
+            # Just initializing
+            if tag != fix_data_tags[0]:
+                return ERR_GROUP_START_TAG_EXPECTED
+
+        if tag == fix_data_tags[0]:
+            # Starting tag, add next element
+            self.open_group.current_element += 1
+
+            if self.open_group.current_element >= <int> self.open_group.grp_n_elements:
+                return ERR_GROUP_EL_OVERFLOW
+
+            fix_data_el_offsets[self.open_group.current_element] = last_position
+        else:
+            for i in range(self.open_group.n_tags):
+                if tag == fix_data_tags[i]:
+                    is_tag_exist = True
+                    break
+            if not is_tag_exist:
+                return ERR_GROUP_TAG_NOT_INGROUP
+
+        cdef FIXRec * rec
+        rec = <FIXRec *> (self.values + last_position)
+
+        rec.tag = tag
+        rec.value_type = value_type
+        rec.value_len = value_size
+
+        memcpy(self.values + last_position + sizeof(FIXRec), value, value_size)
+        self.header.last_position += sizeof(FIXRec) + value_size
+        self.open_group.fix_rec.value_len += sizeof(FIXRec) + value_size
+        return 1
+
+    cdef int group_get(self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
+        if self.open_group != NULL:
+           return ERR_GROUP_NOT_FINISHED
+
+        cdef GroupRec * rec
+        cdef FIXOffsetMap offset
+
+        offset.tag = group_tag
+        offset.data_offset = 0
+
+        if self.tag_hashmap.get(&offset) == NULL:
+            return ERR_NOT_FOUND
+
+        # New value added successfully
+        rec = <GroupRec *> (self.values + offset.data_offset)
+
+        cyassert(rec.n_tags > 0)
+        cyassert(rec.grp_n_elements > 0)
+
+        if rec.fix_rec.value_type != b'\x07':
+            # Type mismatch
+            return ERR_FIX_TYPE_MISMATCH
+
+        if el_idx >= rec.grp_n_elements:
+            return ERR_GROUP_EL_OVERFLOW
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> rec + sizeof(GroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> rec + sizeof(GroupRec) + rec.n_tags * sizeof(uint16_t))
+
+        cdef bint tag_in_group = False
+        for i in range(rec.n_tags):
+            if tag == fix_data_tags[i]:
+                tag_in_group = True
+                break
+        if not tag_in_group:
+            raise ERR_GROUP_TAG_NOT_INGROUP
+
+        cdef uint16_t el_offset = fix_data_el_offsets[el_idx]
+
+        cdef FIXRec * trec = NULL
+
+        cdef uint16_t tag_offset = 0
+        for i in range(rec.n_tags):
+            if el_offset + tag_offset > self.header.data_size:
+                return ERR_NOT_FOUND
+
+            trec = <FIXRec *> (self.values + el_offset + tag_offset)
+            if tag_offset != 0:
+                if trec.tag == fix_data_tags[0]:
+                    # Next start tag
+                    return ERR_NOT_FOUND
+            else:
+                if trec.tag != fix_data_tags[0]:
+                    # Expected to be a start tag
+                    return ERR_GROUP_START_TAG_EXPECTED
+
+            if trec.tag == tag:
+                break
+            else:
+                tag_offset += (trec.value_len + sizeof(FIXRec))
+                trec = NULL
+
+
+        if trec == NULL:
+            return ERR_NOT_FOUND
+
+        if trec.value_type != value_type:
+            return ERR_FIX_TYPE_MISMATCH
+
+        value_size[0] = trec.value_len
+        value[0] = (<void*>trec + sizeof(FIXRec))
+        return 1
+
+    cdef int group_finish(self, uint16_t group_tag) nogil:
+        if self.open_group == NULL:
+            return ERR_GROUP_NOT_STARTED
+        if group_tag != self.open_group.fix_rec.tag:
+            return ERR_GROUP_NOT_MATCH
+        if self.open_group.fix_rec.value_len == 0:
+            return ERR_GROUP_NOT_COMPLETED
+        if self.open_group.current_element != self.open_group.grp_n_elements-1:
+            return ERR_GROUP_NOT_COMPLETED
+
+
+        self.open_group = NULL
         return 1
 
     def __dealloc__(self):

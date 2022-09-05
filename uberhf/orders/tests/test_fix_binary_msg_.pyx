@@ -53,6 +53,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.header.last_position == 0
         assert m.header.n_reallocs == 0
         assert m.header.tag_duplicates == 0
+        assert m.open_group == NULL
 
         m = FIXBinaryMsg(<char> b'C', 1000)
 
@@ -342,3 +343,101 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -6, f'{i}')  # ERR_DATA_OVERFLOW
 
                 prev_last_position = m.header.last_position
+
+
+    def test_group_start(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
+
+        cdef int i
+        cdef void* value
+        cdef uint16_t value_size
+
+        self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), 1)
+        cdef GroupRec * g = m.open_group
+        assert g != NULL
+
+        assert g.fix_rec.tag == 10
+        assert g.fix_rec.value_type == b'\x07'
+        assert g.fix_rec.value_len == 0 # temporary zero!
+        assert g.grp_n_elements == 2
+        assert g.current_element == -1
+        assert g.n_tags == 3
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec) + m.open_group.n_tags * sizeof(uint16_t))
+
+        assert fix_data_tags[0] == 1
+        assert fix_data_tags[1] == 3
+        assert fix_data_tags[2] == 4
+
+        assert fix_data_el_offsets[0] == USHRT_MAX
+        assert fix_data_el_offsets[1] == USHRT_MAX
+
+
+    def test_group_add_tag(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 2000
+
+        cdef int i
+        cdef void* value
+        cdef uint16_t value_size
+
+        self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), 1)
+        cdef GroupRec * g = m.open_group
+        assert g != NULL
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec) + m.open_group.n_tags * sizeof(uint16_t))
+
+        cdef int val = 0
+
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef FIXRec * rec
+        n_tags_added = 0
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(m.group_add_tag(10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
+                rec = <FIXRec*>(m.values + (m.header.last_position - sizeof(FIXRec) - sizeof(int)))
+                val_data = (m.values + (m.header.last_position - sizeof(int)))
+                n_tags_added += 1
+                assert rec.tag == i
+                assert rec.value_type == b'i'
+                assert rec.value_len == sizeof(int)
+                assert g.fix_rec.value_len == n_tags_added * (sizeof(FIXRec) + sizeof(int))
+                self.assertEqual((<int*>val_data)[0], val)
+
+                #self.assertEqual(m.group_get(10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
+                #assert (<int *> val_data)[0] == val
+            #
+            if j == 0:
+                assert fix_data_el_offsets[j] == m.header.last_position - g.fix_rec.value_len
+            else:
+                assert fix_data_el_offsets[j]-fix_data_el_offsets[j-1] == 3 *  (sizeof(FIXRec) + sizeof(int))
+
+            # First tag always must be in place
+            rec = <FIXRec *> (m.values + fix_data_el_offsets[j])
+            assert rec.tag == 1
+
+
+        self.assertEqual(m.group_finish(10), 1)
+        assert m.open_group == NULL
+        assert g != NULL
+
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(m.group_get(10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
+                assert (<int*>val_data)[0] == val
+
+
+
+
