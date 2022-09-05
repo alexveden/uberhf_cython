@@ -28,7 +28,8 @@ ctypedef struct GroupRec:
     FIXRec fix_rec
     uint16_t grp_n_elements
     uint16_t n_tags
-    int8_t current_element
+    uint16_t current_element
+    int8_t current_tag_len
 
 
 cdef class FIXTagHashMap(HashMapBase):
