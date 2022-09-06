@@ -1,6 +1,8 @@
-from uberhf.orders.fix_binary_msg cimport FIXOffsetMap
 from libc.stdint cimport uint16_t
 
+ctypedef struct FIXOffsetMap:
+    uint16_t tag
+    uint16_t data_offset
 
 ctypedef struct FIXTagBinaryTree:
     uint16_t magic

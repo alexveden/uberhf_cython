@@ -2,7 +2,7 @@ from libc.stdlib cimport calloc, realloc, free
 from libc.string cimport memcpy, memset, strlen
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
-
+from uberhf.orders.fix_tag_tree cimport FIXTagBinaryTree, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
 DEF FIX_MAGIC = 22093
 
 
@@ -30,24 +30,6 @@ DEF ERR_GROUP_CORRUPTED        = -19
 
 
 
-
-cdef class FIXTagHashMap(HashMapBase):
-    """
-    FIX Tag to data offset hashmap
-    """
-
-    def __cinit__(self, size_t min_capacity=64):
-        self._new(sizeof(FIXOffsetMap), FIXTagHashMap.item_hash, FIXTagHashMap.item_compare, min_capacity)
-
-    @staticmethod
-    cdef int item_compare(const void *a, const void *b, void *udata) nogil:
-        return (<FIXOffsetMap*>a).tag - (<FIXOffsetMap*>b).tag
-
-    @staticmethod
-    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil:
-        return <uint64_t>(<FIXOffsetMap*>item).tag
-
-
 cdef class FIXBinaryMsg:
     def __cinit__(self, char msg_type, uint16_t data_size):
         cdef uint16_t _data_size = max(data_size, 128)
@@ -57,7 +39,7 @@ cdef class FIXBinaryMsg:
             raise MemoryError()
         self.values = self._data + sizeof(FIXBinaryHeader)
 
-        self.tag_hashmap = FIXTagHashMap.__new__(FIXTagHashMap)
+        self.tag_tree = binary_tree_create(64)
 
         self.open_group = NULL
 
@@ -170,19 +152,14 @@ cdef class FIXBinaryMsg:
             return ERR_DATA_OVERFLOW
 
         cdef FIXRec * rec
-        cdef FIXOffsetMap offset
 
-        offset.tag = tag
-        offset.data_offset = last_position
-
-        if self.tag_hashmap.set(&offset) != NULL:
-            offset.data_offset = USHRT_MAX
+        if binary_tree_set_offset(self.tag_tree, tag, last_position) > USHRT_MAX-10:
+            # Duplicate or error
             self.header.tag_duplicates += 1
-            self.tag_hashmap.set(&offset)
             return ERR_FIX_DUPLICATE_TAG
 
         # New value added successfully
-        rec = <FIXRec*>(self.values + offset.data_offset)
+        rec = <FIXRec*>(self.values + last_position)
 
         # Assuming that the new memory should be set to zero
         cyassert(rec.tag == 0)
@@ -197,7 +174,7 @@ cdef class FIXBinaryMsg:
             cyassert(strlen(<char*>value) + 1 == value_size)   # strlen mismatch, must include \0, and check if value != &((*char)some_string)
             cyassert((<char*>value)[value_size-1] == b'\0')    # String must be null-terminated!
 
-        memcpy(self.values + offset.data_offset + sizeof(FIXRec), value, value_size)
+        memcpy(self.values + last_position + sizeof(FIXRec), value, value_size)
         self.header.last_position += sizeof(FIXRec) + value_size
         return 1
 
@@ -227,9 +204,6 @@ cdef class FIXBinaryMsg:
             return ERR_FIX_NOT_ALLOWED
 
         cdef FIXRec * rec
-        cdef FIXOffsetMap offset
-        offset.tag = tag
-        offset.data_offset = USHRT_MAX
         # Fill default return values
         value[0] = NULL
         value_size[0] = 0
@@ -245,25 +219,23 @@ cdef class FIXBinaryMsg:
             value_size[0] = sizeof(char)
             return 1
 
-        cdef FIXOffsetMap * p_offset_found
-
-        p_offset_found = <FIXOffsetMap*>self.tag_hashmap.get(&offset)
-        if p_offset_found == NULL:
+        cdef uint16_t data_offset = binary_tree_get_offset(self.tag_tree, tag)
+        if data_offset == USHRT_MAX-1:
             # Tag not found
             return ERR_NOT_FOUND
 
-        if p_offset_found.data_offset == USHRT_MAX:
-            # Possibly duplicate tag, return as error
+        if data_offset >= USHRT_MAX-2:
+            # Possibly duplicate tag, or other generic error, we must stop anyway
             return ERR_FIX_DUPLICATE_TAG
 
-        rec = <FIXRec *> (self.values + p_offset_found.data_offset)
+        rec = <FIXRec *> (self.values + data_offset)
 
         if rec.value_type != value_type:
             # Type mismatch
             return ERR_FIX_TYPE_MISMATCH
 
         value_size[0] = rec.value_len
-        value[0] = self.values + p_offset_found.data_offset + sizeof(FIXRec)
+        value[0] = self.values + data_offset + sizeof(FIXRec)
         return 1
 
     cdef int group_start(self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil:
@@ -317,17 +289,8 @@ cdef class FIXBinaryMsg:
             return ERR_DATA_OVERFLOW
 
         cdef GroupRec * rec
-        cdef FIXOffsetMap offset
-
-        offset.tag = group_tag
-        offset.data_offset = last_position
-
-        #cybreakpoint(group_tag == 20 and offset.data_offset == 0)
-
-        if self.tag_hashmap.set(&offset) != NULL:
-            offset.data_offset = USHRT_MAX
+        if binary_tree_set_offset(self.tag_tree, group_tag, last_position) >= USHRT_MAX-2:
             self.header.tag_duplicates += 1
-            self.tag_hashmap.set(&offset)
             return ERR_FIX_DUPLICATE_TAG
 
         # New value added successfully
@@ -351,7 +314,6 @@ cdef class FIXBinaryMsg:
         cdef uint16_t i, j
         cdef uint16_t *fix_data_tags = <uint16_t *>(self.values + last_position + sizeof(GroupRec))
 
-        offset.data_offset = USHRT_MAX
 
         for i in range(n_tags):
             cyassert(n_tags < 127)
@@ -365,8 +327,7 @@ cdef class FIXBinaryMsg:
                 if i != j and tags[i] == tags[j]:
                     return ERR_GROUP_DUPLICATE_TAG
 
-            offset.tag = tags[i]
-            if self.tag_hashmap.get(&offset) != NULL:
+            if binary_tree_get_offset(self.tag_tree, tags[i]) != USHRT_MAX-1:  # DEF RESULT_NOT_FOUND = 	65534 # USHRT_MAX-1
                 # Group tags must be unique across global tags!
                 return ERR_GROUP_DUPLICATE_TAG
 
@@ -475,22 +436,13 @@ cdef class FIXBinaryMsg:
            return ERR_GROUP_NOT_FINISHED
 
         cdef GroupRec * rec
-        cdef FIXOffsetMap offset
 
-        offset.tag = group_tag
-        offset.data_offset = USHRT_MAX
-
-        cdef FIXOffsetMap * p_offset_found
-
-        p_offset_found =  <FIXOffsetMap*>self.tag_hashmap.get(&offset)
-        if p_offset_found == NULL:
+        cdef uint16_t data_offset = binary_tree_get_offset(self.tag_tree, group_tag)
+        if data_offset == USHRT_MAX-1:  #DEF RESULT_NOT_FOUND = 	65534 # USHRT_MAX-1
             return ERR_NOT_FOUND
 
-        cyassert(p_offset_found.data_offset < USHRT_MAX)
-        #cybreakpoint(group_tag == 10 and tag == 17)
-
         # New value added successfully
-        rec = <GroupRec *> (self.values + p_offset_found.data_offset)
+        rec = <GroupRec *> (self.values + data_offset)
 
         if rec.fix_rec.value_type != b'\x07':
             # Type mismatch

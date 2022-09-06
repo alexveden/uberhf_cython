@@ -18,31 +18,6 @@ from libc.limits cimport USHRT_MAX
 from uberhf.orders.fix_binary_msg cimport *
 
 class CyBinaryMsgTestCase(unittest.TestCase):
-    def test_fix_tag_hashmap(self):
-        h = FIXTagHashMap()
-        cdef FIXOffsetMap offset
-        cdef FIXOffsetMap * p_offset
-
-        assert h.item_size == sizeof(FIXOffsetMap)
-
-        offset.tag = 1
-        offset.data_offset = 123
-        assert h.set(&offset) == NULL
-
-        offset.tag = 10
-        offset.data_offset = 222
-        assert h.set(&offset) == NULL
-
-        assert h.count() == 2
-
-        offset.tag = 1
-        offset.data_offset = 333
-        assert h.set(&offset) != NULL
-
-        p_offset = <FIXOffsetMap *>h.get(&offset)
-        assert p_offset != NULL
-        assert p_offset.tag == 1
-        assert p_offset.data_offset == 333
 
     def test_init_msg(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char>b'C', 0)
@@ -58,15 +33,15 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'C', 1000)
 
         assert m.header.data_size == 1000
-        assert m.tag_hashmap.count() == 0
-        assert m.tag_hashmap.item_size == sizeof(FIXOffsetMap)
+        assert m.tag_tree.size == 0
+        assert m.tag_tree.capacity == 64
 
     def test_get_set_raw(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
         cdef int value = 123
 
         assert m.set(11, &value, sizeof(int), b'i') == 1
-        assert m.tag_hashmap.count() == 1
+        assert m.tag_tree.size == 1
 
         cdef void * p_value = NULL
         cdef uint16_t p_size = 0
@@ -90,7 +65,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int value = 123
         assert m.set(11, &value, sizeof(int), b'i') == 1
         assert m.set(11, &value, sizeof(int), b'i') == -1
-        assert m.tag_hashmap.count() == 1
+        assert m.tag_tree.size == 1
         assert m.header.tag_duplicates == 1
 
         cdef void * p_value = NULL
@@ -249,7 +224,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 prev_last_position = m.header.last_position
 
         assert i == USHRT_MAX-1, i
-        self.assertEqual(m.tag_hashmap.count(), max_records-2)
+        self.assertEqual(m.tag_tree.size, max_records-2)
         assert m.header.n_reallocs == 0
 
         for i in range(0, USHRT_MAX):
@@ -309,7 +284,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 prev_last_position = m.header.last_position
 
         assert i == USHRT_MAX-1, i
-        self.assertEqual(m.tag_hashmap.count(), max_records-2)
+        self.assertEqual(m.tag_tree.size, max_records-2)
         assert m.header.n_reallocs == 0
 
         for i in range(0, USHRT_MAX):

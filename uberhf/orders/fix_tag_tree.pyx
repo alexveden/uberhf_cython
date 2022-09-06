@@ -5,6 +5,9 @@ from libc.string cimport memset, memmove
 cimport cython
 
 DEF BINARY_TREE_MAGIC = 22906
+DEF RESULT_ERROR =   	65535 # USHRT_MAX
+DEF RESULT_NOT_FOUND = 	65534 # USHRT_MAX-1
+DEF RESULT_DUPLICATE = 	65533 # USHRT_MAX-2
 
 cdef FIXTagBinaryTree * binary_tree_create(uint16_t initial_capacity) nogil:
     cyassert(initial_capacity > 0)
@@ -77,16 +80,16 @@ cdef bint binary_tree_resize(FIXTagBinaryTree * tree, size_t new_capacity) nogil
 
 cdef uint16_t binary_tree_set_offset(FIXTagBinaryTree * tree, uint16_t tag, uint16_t tag_offset) nogil:
     if tag == 0 or tag == USHRT_MAX:
-        return USHRT_MAX
+        return RESULT_ERROR
 
     cdef uint16_t tree_size = tree.size
     cdef uint16_t lo, hi, mid
-    if tree_size == USHRT_MAX-1:
-        return USHRT_MAX
+    if tree_size == USHRT_MAX-10:
+        return RESULT_ERROR
 
     if tree_size+1 > tree.capacity:
         if not binary_tree_resize(tree, tree.capacity * 2):
-            return USHRT_MAX
+            return RESULT_ERROR
 
     if tree_size == 0:
         tree.elements[0].tag = tag
@@ -121,7 +124,7 @@ cdef uint16_t binary_tree_set_offset(FIXTagBinaryTree * tree, uint16_t tag, uint
                 # It's strictly forbidden to have duplicate fix messages
                 #    this will lead to a whole message corruption status!
                 tree.elements[lo].data_offset = USHRT_MAX
-                return USHRT_MAX
+                return RESULT_DUPLICATE
 
             cyassert(tree.elements[lo].tag > tag)
             last_tag = tree.elements[tree_size-1].tag
@@ -140,19 +143,19 @@ cdef uint16_t binary_tree_get_offset(FIXTagBinaryTree * tree, uint16_t tag) nogi
     cdef uint16_t element = tag
 
     if end_index == 0 or tag == 0 or tag == USHRT_MAX:
-        return USHRT_MAX
+        return RESULT_ERROR
 
     # Try fast way
     if tree.elements[0].tag >= tag:
         if tree.elements[0].tag == tag:
             return tree.elements[0].data_offset
         else:
-            return USHRT_MAX
+            return RESULT_NOT_FOUND
     if tree.elements[tree.size-1].tag <= tag:
         if tree.elements[tree.size-1].tag == tag:
             return tree.elements[tree.size-1].data_offset
         else:
-            return USHRT_MAX
+            return RESULT_NOT_FOUND
 
     while start_index <= end_index:
         middle = start_index + <uint16_t>((end_index - start_index ) / 2)
@@ -166,4 +169,4 @@ cdef uint16_t binary_tree_get_offset(FIXTagBinaryTree * tree, uint16_t tag) nogi
             end_index = middle - 1
             #cyassert(end_index < tree.size)
 
-    return USHRT_MAX
+    return RESULT_NOT_FOUND

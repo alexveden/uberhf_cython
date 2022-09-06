@@ -126,7 +126,7 @@ class CyTagTreeTestCase(unittest.TestCase):
         assert tree.elements != NULL
 
         assert binary_tree_set_offset(tree, 1, 10) == 0
-        assert binary_tree_set_offset(tree, 1, 20) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 1, 20) == USHRT_MAX-2
         assert tree.elements[0].tag == 1
         assert tree.elements[0].data_offset == USHRT_MAX
         assert tree.size == 1
@@ -157,7 +157,7 @@ class CyTagTreeTestCase(unittest.TestCase):
 
         assert binary_tree_get_offset(tree, 0) == USHRT_MAX
         assert binary_tree_get_offset(tree, USHRT_MAX) == USHRT_MAX
-        assert binary_tree_get_offset(tree, 6) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 6) == USHRT_MAX-1
 
         binary_tree_destroy(tree)
 
@@ -171,7 +171,7 @@ class CyTagTreeTestCase(unittest.TestCase):
         expected_failure_at = USHRT_MAX - int((USHRT_MAX - sizeof(FIXTagBinaryTree)) / sizeof(FIXOffsetMap))
 
         for i in range(USHRT_MAX) :
-            if i == USHRT_MAX-1:
+            if i >= USHRT_MAX-10:
                 # Overflow
                 self.assertEqual(binary_tree_set_offset(tree, i + 1, i), USHRT_MAX,
                                  f'tree.capacity={tree.size}/{tree.capacity}')
@@ -180,7 +180,7 @@ class CyTagTreeTestCase(unittest.TestCase):
                                  f'tree.capacity={tree.size}/{tree.capacity} expected_failure_at={expected_failure_at}')
 
         assert tree.capacity == USHRT_MAX-1
-        self.assertEqual(tree.size, USHRT_MAX-1)
+        self.assertEqual(tree.size, USHRT_MAX-10)
 
         binary_tree_destroy(tree)
 
@@ -268,11 +268,11 @@ class CyTagTreeTestCase(unittest.TestCase):
         assert binary_tree_set_offset(tree, 3, 30) == 2
         assert binary_tree_set_offset(tree, 4, 40) == 3
         assert binary_tree_set_offset(tree, 5, 50) == 4
-        assert binary_tree_set_offset(tree, 1, 10) == USHRT_MAX
-        assert binary_tree_set_offset(tree, 2, 20) == USHRT_MAX
-        assert binary_tree_set_offset(tree, 3, 30) == USHRT_MAX
-        assert binary_tree_set_offset(tree, 4, 40) == USHRT_MAX
-        assert binary_tree_set_offset(tree, 5, 50) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 1, 10) == USHRT_MAX-2
+        assert binary_tree_set_offset(tree, 2, 20) == USHRT_MAX-2
+        assert binary_tree_set_offset(tree, 3, 30) == USHRT_MAX-2
+        assert binary_tree_set_offset(tree, 4, 40) == USHRT_MAX-2
+        assert binary_tree_set_offset(tree, 5, 50) == USHRT_MAX-2
 
 
         assert binary_tree_get_offset(tree, 1) == USHRT_MAX
@@ -292,12 +292,12 @@ class CyTagTreeTestCase(unittest.TestCase):
         assert binary_tree_set_offset(tree, 5, 50) == 1
         assert binary_tree_set_offset(tree, 8, 100) == 2
 
-        assert binary_tree_get_offset(tree, 2) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 2) == USHRT_MAX-1
         assert binary_tree_get_offset(tree, 3) == 10
-        assert binary_tree_get_offset(tree, 4) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 4) == USHRT_MAX-1
         assert binary_tree_get_offset(tree, 5) == 50
-        assert binary_tree_get_offset(tree, 6) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 6) == USHRT_MAX-1
         assert binary_tree_get_offset(tree, 8) == 100
-        assert binary_tree_get_offset(tree, 9) == USHRT_MAX
-        assert binary_tree_get_offset(tree, 100) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 9) == USHRT_MAX-1
+        assert binary_tree_get_offset(tree, 100) == USHRT_MAX-1
 

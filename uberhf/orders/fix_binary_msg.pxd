@@ -2,7 +2,7 @@
 Universal binary message container for FIX protocol
 """
 from libc.stdint cimport uint64_t, uint16_t, int8_t
-from uberhf.includes.hashmap cimport HashMapBase
+from uberhf.orders.fix_tag_tree cimport FIXTagBinaryTree
 
 
 ctypedef struct FIXBinaryHeader:
@@ -20,9 +20,6 @@ ctypedef struct FIXRec:
     uint16_t value_len
 
 
-ctypedef struct FIXOffsetMap:
-    uint16_t tag
-    uint16_t data_offset
 
 ctypedef struct GroupRec:
     FIXRec fix_rec
@@ -31,19 +28,13 @@ ctypedef struct GroupRec:
     uint16_t current_element
     int8_t current_tag_len
 
-cdef class FIXTagHashMap(HashMapBase):
-    @staticmethod
-    cdef int item_compare(const void *a, const void *b, void *udata) nogil
-    @staticmethod
-    cdef uint64_t item_hash(const void *item, uint64_t seed0, uint64_t seed1) nogil
-
 
 cdef class FIXBinaryMsg:
     cdef void* _data
 
     cdef void* values
     cdef GroupRec* open_group
-    cdef FIXTagHashMap tag_hashmap
+    cdef FIXTagBinaryTree * tag_tree
     cdef FIXBinaryHeader* header
 
     cdef int _request_new_space(self, size_t extra_size) nogil
