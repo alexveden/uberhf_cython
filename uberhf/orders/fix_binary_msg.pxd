@@ -31,7 +31,6 @@ ctypedef struct GroupRec:
     uint16_t current_element
     int8_t current_tag_len
 
-
 cdef class FIXTagHashMap(HashMapBase):
     @staticmethod
     cdef int item_compare(const void *a, const void *b, void *udata) nogil

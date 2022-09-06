@@ -45,7 +45,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert p_offset.data_offset == 333
 
     def test_init_msg(self):
-        cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
+        cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char>b'C', 0)
 
         assert m.header.data_size == 128
         assert m.header.msg_type == b'C'
@@ -990,11 +990,11 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
                 t += 10
             else:
-                #m.set(t, &t, sizeof(int), b'i')
+                m.set(t, &t, sizeof(int), b'i')
                 t += 1
 
-
-        for t in range(1, 100):
+        t = 1
+        while t < 100:
             if t % 10 == 0:
                 for k in range(n_elements):
                     self.assertEqual(m.group_get(t, k, t + 1, &value, &value_size, b'i'), 1, f't={t} k={k}')
@@ -1012,4 +1012,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual(m.group_get(t, k, t + 7, &value, &value_size, b's'), 1, f'k={k}')
                     assert value_size == strlen(s) + 1
                     assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
-
+                t += 10
+            else:
+                self.assertEqual(m.get(t, &value, &value_size, b'i'), 1, f't={t}' )
+                assert (<int *> value)[0] == t
+                assert value_size == sizeof(int)
+                t += 1

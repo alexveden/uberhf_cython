@@ -2,7 +2,7 @@ from libc.stdlib cimport calloc, realloc, free
 from libc.string cimport memcpy, memset, strlen
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
-from libc.stdint cimport int8_t
+
 DEF FIX_MAGIC = 22093
 
 
