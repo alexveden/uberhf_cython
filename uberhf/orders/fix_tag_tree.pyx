@@ -79,7 +79,7 @@ cdef bint binary_tree_resize(FIXTagBinaryTree * tree, size_t new_capacity) nogil
     return True
 
 cdef uint16_t binary_tree_set_offset(FIXTagBinaryTree * tree, uint16_t tag, uint16_t tag_offset) nogil:
-    if tag == 0 or tag == USHRT_MAX:
+    if tag == 0 or tag > USHRT_MAX-10 or tag_offset > USHRT_MAX-10:
         return RESULT_ERROR
 
     cdef uint16_t tree_size = tree.size
@@ -142,7 +142,7 @@ cdef uint16_t binary_tree_get_offset(FIXTagBinaryTree * tree, uint16_t tag) nogi
     cdef uint16_t middle = 0
     cdef uint16_t element = tag
 
-    if end_index == 0 or tag == 0 or tag == USHRT_MAX:
+    if end_index == 0 or tag == 0 or tag >= USHRT_MAX-10:
         return RESULT_ERROR
 
     # Try fast way
