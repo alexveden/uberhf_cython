@@ -142,13 +142,28 @@ cdef uint16_t binary_tree_get_offset(FIXTagBinaryTree * tree, uint16_t tag) nogi
     if end_index == 0 or tag == 0 or tag == USHRT_MAX:
         return USHRT_MAX
 
+    # Try fast way
+    if tree.elements[0].tag >= tag:
+        if tree.elements[0].tag == tag:
+            return tree.elements[0].data_offset
+        else:
+            return USHRT_MAX
+    if tree.elements[tree.size-1].tag <= tag:
+        if tree.elements[tree.size-1].tag == tag:
+            return tree.elements[tree.size-1].data_offset
+        else:
+            return USHRT_MAX
+
     while start_index <= end_index:
         middle = start_index + <uint16_t>((end_index - start_index ) / 2)
+        #cyassert(middle < tree.size)
         if tree.elements[middle].tag == element:
             return tree.elements[middle].data_offset
         if tree.elements[middle].tag < element:
             start_index = middle + 1
+            #cyassert(start_index < tree.size)
         else:
             end_index = middle - 1
+            #cyassert(end_index < tree.size)
 
     return USHRT_MAX

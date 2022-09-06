@@ -36,6 +36,12 @@ tests-debug: build-debug
 run: build-debug
 	$(CYTOOL) run $(p)
 
+run-valgrind: build-debug
+	$(CYTOOL) valgrind $(p)
+
+run-production: build-production
+	$(CYTOOL) run $(p)
+
 debug: build-debug
 	$(CYTOOL) debug $(p)
 

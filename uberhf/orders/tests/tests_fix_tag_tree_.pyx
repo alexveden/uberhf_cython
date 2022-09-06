@@ -255,3 +255,49 @@ class CyTagTreeTestCase(unittest.TestCase):
 
         binary_tree_destroy(tree)
 
+
+    def test_check_get_offset_all_duplicates(self):
+        cdef FIXTagBinaryTree * tree = binary_tree_create(5)
+        assert tree.size == 0
+        assert tree.capacity == 5
+        assert tree.elements != NULL
+        assert binary_tree_get_offset(tree, 1) == USHRT_MAX
+
+        assert binary_tree_set_offset(tree, 1, 10) == 0
+        assert binary_tree_set_offset(tree, 2, 20) == 1
+        assert binary_tree_set_offset(tree, 3, 30) == 2
+        assert binary_tree_set_offset(tree, 4, 40) == 3
+        assert binary_tree_set_offset(tree, 5, 50) == 4
+        assert binary_tree_set_offset(tree, 1, 10) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 2, 20) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 3, 30) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 4, 40) == USHRT_MAX
+        assert binary_tree_set_offset(tree, 5, 50) == USHRT_MAX
+
+
+        assert binary_tree_get_offset(tree, 1) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 2) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 3) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 4) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 5) == USHRT_MAX
+
+    def test_check_get_search(self):
+        cdef FIXTagBinaryTree * tree = binary_tree_create(5)
+        assert tree.size == 0
+        assert tree.capacity == 5
+        assert tree.elements != NULL
+        assert binary_tree_get_offset(tree, 1) == USHRT_MAX
+
+        assert binary_tree_set_offset(tree, 3, 10) == 0
+        assert binary_tree_set_offset(tree, 5, 50) == 1
+        assert binary_tree_set_offset(tree, 8, 100) == 2
+
+        assert binary_tree_get_offset(tree, 2) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 3) == 10
+        assert binary_tree_get_offset(tree, 4) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 5) == 50
+        assert binary_tree_get_offset(tree, 6) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 8) == 100
+        assert binary_tree_get_offset(tree, 9) == USHRT_MAX
+        assert binary_tree_get_offset(tree, 100) == USHRT_MAX
+
