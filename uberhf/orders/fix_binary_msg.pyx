@@ -65,9 +65,19 @@ cdef class FIXBinaryMsg:
             self.tag_tree = NULL
 
     cdef int get_last_error(self) nogil:
+        """
+        Last error returned by primitive type get operation
+        :return: 
+        """
         return self.last_error
 
     cdef const char* get_last_error_str(self, int e) nogil:
+        """
+        Return test error for each of error codes returned by get/set functions
+        
+        :param e: if > 0 - not an error! 
+        :return: char*
+        """
         if e > 0:
             return b'No error'
         elif e == ERR_NOT_FOUND:
@@ -116,6 +126,17 @@ cdef class FIXBinaryMsg:
         return b'unknown error code'
 
     cdef bint is_valid(self) nogil:
+        """
+        Check is binary message is valid
+        
+        Validity criteria
+        - FIX_MAGIC in header
+        - no data overflow
+        - no tag errors
+        - no currently open groups
+        - valid msg type > 0
+        :return: 
+        """
         return self.header.magic_number == FIX_MAGIC and \
                self.header.last_position < USHRT_MAX and \
                self.header.tag_errors == 0 and \
@@ -337,32 +358,37 @@ cdef class FIXBinaryMsg:
 
     cdef int group_start(self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil:
         """
+        Initializes fix group
         
-        :param group_tag: 
-        :param grp_n_elements: 
-        :param n_tags: 
-        :param tags: 
-        :return: 
+        Example:
+            m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+            cdef uint16_t n_elements = 5
+    
+            cdef int i = 123
+            cdef double f = 8907.889
+            cdef char c = b'V'
+            cdef char * s = b'my fancy string, it may be too long!'
+    
+            assert m.group_start(100, n_elements, 4,  [10, 11, 12, 13]) == 1
+            for k in range(n_elements):
+                # start_tag is mandatory! TAG ORDER MATTERS!
+                m.group_add_tag(100, 10, &i, sizeof(int), b'i')
+                m.group_add_tag(100, 11, &f, sizeof(double), b'f')
+                #   Other tags may be omitted or optional
+                #   m.group_add_tag(100, 12, &c, sizeof(char), b'c')
+                m.group_add_tag(100, 13, s, strlen(s) + 1, b's')
+            assert m.group_finish(100) == 1
+    
+            assert m.group_count(100) == 5
+            
+            
+        :param group_tag: unique group tag 
+        :param grp_n_elements: number of elements in a grout
+        :param n_tags: length of `tags` array, min 1, max 126
+        :param tags: collection of child tags (must be unique, order matters!)
+        :return: positive on success, negative on error
         """
 
-        """
-        Group data alignment
-        struct GroupRec
-            FIXRec fix_rec
-                uint16_t tag
-                char value_type
-                uint16_t value_len
-            uint16_t grp_n_elements
-            uint16_t n_tags
-            uint16_t * group_tags_values         # List of all tags in a group (must be n_tags length)
-                uint16_t *tag1 (is mandatory!)
-                ...
-                uint16_t *tag_n (len n_tags)
-            uint16_t * group_elements_offsets     # Used for fast group search by index
-                uint16_t *el_1 offset
-                ...
-                uint16_t *el_n offset (len grp_n_elements)
-        """
         cyassert(self.header != NULL)
         if self.open_group != NULL:
             self.header.tag_errors += 1
@@ -402,6 +428,22 @@ cdef class FIXBinaryMsg:
         cyassert(rec.fix_rec.tag == 0)
         cyassert(rec.fix_rec.value_type == b'\0')
         cyassert(rec.fix_rec.value_len == 0)
+        # Group data alignment
+        # struct GroupRec
+        #     FIXRec fix_rec
+        #         uint16_t tag
+        #         char value_type
+        #         uint16_t value_len
+        #     uint16_t grp_n_elements
+        #     uint16_t n_tags
+        #     uint16_t * group_tags_values         # List of all tags in a group (must be n_tags length)
+        #         uint16_t *tag1 (is mandatory!)
+        #         ...
+        #         uint16_t *tag_n (len n_tags)
+        #     uint16_t * group_elements_offsets     # Used for fast group search by index
+        #         uint16_t *el_1 offset
+        #         ...
+        #         uint16_t *el_n offset (len grp_n_elements)
 
         rec.fix_rec.tag = group_tag
         rec.fix_rec.value_type = b'\x07'  # Special type reserved for groups
@@ -448,6 +490,24 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_add_tag(self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        """
+        Adds new child tag into a group
+        
+        Notes:
+            - This function requires previous group_start() call
+            - `tag` must present in group_start(..., *tags) call
+            - always add `tag[0]` (start tag) in group_start(..., *tags[0]) call
+            - child tags must be unique across FIX messages (but allowed duplication within the same group_tag)
+            - you must add the count of start_tags == value of group_start(..., `grp_n_elements`,...)
+            - tag order matters and must be the same as in FIX specification and group_start(..., *tags) order
+        
+        :param group_tag: parent group tag 
+        :param tag: child group tag
+        :param value: child tag value
+        :param value_size: child tag size
+        :param value_type: child tag type
+        :return: positive on success, zero or negative on error 
+        """
         cyassert(self.header != NULL)
         if self.open_group == NULL:
             self.header.tag_errors += 1
@@ -556,6 +616,17 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_get(self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
+        """
+        Get group.element.tag value
+        
+        :param group_tag: finished group tag
+        :param el_idx:  element index (must be >= 0 and < grp_n_elements)
+        :param tag: child tag in the group
+        :param value: pointer to void* buffer of the tag value
+        :param value_size:  tag value size
+        :param value_type: tag value type (must match to group_add_tag(..., `value_type`))        
+        :return: 1 if found, 0 if not found, negative on error
+        """
         cyassert(self.header != NULL)
         # Reset pointers before handling any errors
         value[0] = NULL
@@ -648,6 +719,12 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_finish(self, uint16_t group_tag) nogil:
+        """
+        Finish tag group, must be called after 
+        
+        :param group_tag: 
+        :return: 
+        """
         cyassert(self.header != NULL)
         if self.open_group == NULL:
             self.header.tag_errors += 1
@@ -677,6 +754,12 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_count(self, uint16_t group_tag) nogil:
+        """
+        Gets number of element of `group_tag`, or zero if not found
+        
+        :param group_tag: some valid group tag
+        :return: positive count if group exists, 0 if not exists, negative on error
+        """
         cyassert(self.header != NULL)
         if self.header.last_position == USHRT_MAX:
             return ERR_DATA_OVERFLOW
@@ -712,9 +795,22 @@ cdef class FIXBinaryMsg:
     #
     #
     cdef int set_int(self, uint16_t tag, int value) nogil:
+        """
+        Set signed integer tag
+        
+        :param tag: any valid tag
+        :param value: any integer value
+        :return: positive on success, negative on error
+        """
         return self.set(tag, &value, sizeof(int), b'i')
 
     cdef int* get_int(self, uint16_t tag) nogil:
+        """
+        Get signed integer tag
+        
+        :param tag: any valid tag
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size
@@ -729,6 +825,13 @@ cdef class FIXBinaryMsg:
             return NULL
 
     cdef int set_bool(self, uint16_t tag, bint value) nogil:
+        """
+        Set boolean
+
+        :param tag: any valid tag
+        :param value: must be 0 or 1  
+        :return: positive on success, negative on error
+        """
         if value != 0 and value != 1:
             self.header.tag_errors += 1
             return ERR_UNEXPECTED_TYPE_SIZE
@@ -736,6 +839,12 @@ cdef class FIXBinaryMsg:
         return self.set(tag, &v, sizeof(char), b'b')
 
     cdef bint* get_bool(self, uint16_t tag) nogil:
+        """
+        Get boolean 
+        
+        :param tag: 
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size
@@ -750,6 +859,13 @@ cdef class FIXBinaryMsg:
             return NULL
 
     cdef int set_char(self, uint16_t tag, char value) nogil:
+        """
+        Set char
+
+        :param tag: any valid tag
+        :param value: must be > 20 and < 127 (i.e. all printable chars are allowed)  
+        :return: positive on success, negative on error
+        """
         if value < 20 or value == 127:
             # All negative and control ASCII char are not allowed
             self.header.tag_errors += 1
@@ -758,6 +874,12 @@ cdef class FIXBinaryMsg:
         return self.set(tag, &value, sizeof(char), b'c')
 
     cdef char* get_char(self, uint16_t tag) nogil:
+        """
+        Get char
+
+        :param tag: 
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size
@@ -772,9 +894,22 @@ cdef class FIXBinaryMsg:
             return NULL
 
     cdef int set_double(self, uint16_t tag, double value) nogil:
+        """
+        Set floating point number (type double)
+
+        :param tag: any valid tag
+        :param value: any double value  
+        :return: positive on success, negative on error
+        """
         return self.set(tag, &value, sizeof(double), b'f')
 
     cdef double* get_double(self, uint16_t tag) nogil:
+        """
+        Get double tag
+
+        :param tag: 
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size
@@ -789,9 +924,22 @@ cdef class FIXBinaryMsg:
             return NULL
 
     cdef int set_utc_timestamp(self, uint16_t tag, long value_ns) nogil:
+        """
+        Set UTC timestamp as nanoseconds since epoch (long)
+
+        :param tag: any valid tag
+        :param value_ns: nanoseconds since epoch
+        :return: positive on success, negative on error
+        """
         return self.set(tag, &value_ns, sizeof(long), b't')
 
     cdef long* get_utc_timestamp(self, uint16_t tag) nogil:
+        """
+        Gets UTC timestamp as nanoseconds since epoch
+
+        :param tag: 
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size
@@ -806,6 +954,16 @@ cdef class FIXBinaryMsg:
             return NULL
 
     cdef int set_str(self, uint16_t tag, char *value, uint16_t length) nogil:
+        """
+        Set string field
+
+        :param tag: any valid tag
+        :param value: any string of length > 0 and < 1024
+        :param length: string length (without \0 char, i.e. length of 'abc' == 3),
+                       if length = 0, the function will use strlen(value)
+                       if length is known you should pass is for performance reasons  
+        :return: positive on success, negative on error
+        """
         if length == 0:
             length = strlen(value)
         if length == 0:
@@ -814,6 +972,12 @@ cdef class FIXBinaryMsg:
         return self.set(tag, value, length+1, b's')
 
     cdef char * get_str(self, uint16_t tag) nogil:
+        """
+        Get string field
+
+        :param tag: any valid tag
+        :return: pointer to value, or NULL on error + sets last_error
+        """
         self.last_error = 1
         cdef void* value
         cdef uint16_t size

@@ -1563,3 +1563,24 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.get_last_error_str(-20), b'Tag actual value or size does not match expected type size/value boundaries')
 
         self.assertEqual(m.get_last_error_str(-21), b'unknown error code')
+
+    def test_fix_group_sample(self):
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+        cdef uint16_t n_elements = 5
+
+        cdef int i = 123
+        cdef double f = 8907.889
+        cdef char c = b'V'
+        cdef char * s = b'my fancy string, it may be too long!'
+
+        assert m.group_start(100, n_elements, 4,  [10, 11, 12, 13]) == 1
+        for k in range(n_elements):
+            # start_tag is mandatory! TAG ORDER MATTERS!
+            m.group_add_tag(100, 10, &i, sizeof(int), b'i')
+            m.group_add_tag(100, 11, &f, sizeof(double), b'f')
+            # Other tags may be omitted or optional
+            #m.group_add_tag(100, 12, &c, sizeof(char), b'c')
+            m.group_add_tag(100, 13, s, strlen(s) + 1, b's')
+        assert m.group_finish(100) == 1
+
+        assert m.group_count(100) == 5
