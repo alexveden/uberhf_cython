@@ -175,7 +175,7 @@ class CyTagTreeTestCase(unittest.TestCase):
                                  f'tree.capacity={tree.size}/{tree.capacity}')
             else:
                 self.assertEqual(binary_tree_set_offset(tree, i + 1, i), i,
-                                 f'tree.capacity={tree.size}/{tree.capacity} expected_failure_at={expected_failure_at}')
+                                 f'tree.capacity={tree.size}/{tree.capacity} i={i}')
 
         self.assertEqual(tree.capacity, USHRT_MAX-10)
         self.assertEqual(tree.size, USHRT_MAX-10)

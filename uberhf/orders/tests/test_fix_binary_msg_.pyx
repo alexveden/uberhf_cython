@@ -5,7 +5,7 @@ import zmq
 from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
-from uberhf.includes.utils cimport strlcpy
+from uberhf.includes.utils cimport strlcpy, datetime_nsnow
 from libc.stdint cimport uint64_t, uint16_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy, memset
 from libc.stdlib cimport malloc, free
@@ -86,6 +86,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert strlen(val) == 1023, strlen(val)
         assert m.set(10, val, 1024, b's') == 1 # OK
         assert m.set(11, &value, 1025, b'i') == -3 # ERR_FIX_VALUE_TOOLONG
+        assert m.set(12, &value, 0, b'i') == -20 # ERR_UNEXPECTED_TYPE_SIZE
         free(val)
 
         assert m.is_valid() == 0
@@ -749,6 +750,43 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.header.tag_errors > 0
         assert m.is_valid() == 0  # Had errors
 
+    def test_group_add_tag_too_long(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.group_start(10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(m.group_add_tag(10, 1, &a, 1025, b'i'), -3) # ERR_FIX_VALUE_TOOLONG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
+
+    def test_group_add_tag_size_zero(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.group_start(10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(m.group_add_tag(10, 1, &a, 0, b'i'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
+
+    def test_group_add_tag_string_length_mismatch(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        cdef void *value
+        cdef uint16_t value_size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.group_start(10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef char * s = b'12345'
+        self.assertEqual(m.group_add_tag(10, 1, &s, strlen(s), b's'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
+
+
     def test_group_add_tag_type_not_allowed(self):
         # Exact match no resize
         cdef FIXBinaryMsg m
@@ -1324,3 +1362,204 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_count(USHRT_MAX-10), -6) # ERR_DATA_OVERFLOW
 
         assert m.is_valid() == 0
+
+    def test_getset_int(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef double i = 12.0
+        self.assertEqual(m.set(10, &i, sizeof(double), b'i'), 1, f'{i}')
+
+        assert m.set_int(12, 123) == 1
+        assert m.get_int(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_int(13) == NULL
+        assert m.get_last_error() == 0    #ERR_NOT_FOUND
+        assert m.get_int(12)[0] == 123
+        assert m.get_last_error() == 1  # Success no error!
+
+        assert m.get(12, &value, &size, b'i') == 1
+        assert (<int*>value)[0] == 123
+
+
+    def test_getset_bool(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef double i = 12.0
+        self.assertEqual(m.set(10, &i, sizeof(double), b'b'), 1, f'{i}')
+
+        assert m.set_bool(13, 123) == -20
+        assert m.header.tag_errors > 0
+
+        assert m.set_bool(12, True) == 1
+        assert m.get_bool(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_bool(13) == NULL
+        assert m.get_last_error() == 0  #ERR_NOT_FOUND
+        assert m.get_bool(12)[0] == 1
+        assert m.get_last_error() == 1  # Success no error!
+
+        assert m.get(12, &value, &size, b'b') == 1
+        assert (<bint *> value)[0] == 1
+
+    def test_getset_char(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef double i = 12.0
+        self.assertEqual(m.set(10, &i, sizeof(double), b'c'), 1, f'{i}')
+
+        for c in range(-127, 20):
+            # Negative chars, and all less than space ascii <20> not allowed
+            assert m.set_char(13, c) == -20
+
+        # Char #127 (<del>) not allowed
+        assert m.set_char(13, 127) == -20
+
+        assert m.set_char(12, 20) == 1
+        assert m.set_char(15, 126) == 1
+
+        assert m.get_char(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_char(13) == NULL
+        assert m.get_last_error() == 0  #ERR_NOT_FOUND
+        assert m.get_char(12)[0] == 20
+        assert m.get_char(15)[0] == 126
+        assert m.get_last_error() == 1  # Success no error!
+
+        assert m.get(12, &value, &size, b'c') == 1
+        assert (<char *> value)[0] == 20
+        assert m.get(15, &value, &size, b'c') == 1
+        assert (<char *> value)[0] == 126
+
+
+    def test_getset_double(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i = 12
+        self.assertEqual(m.set(10, &i, sizeof(int), b'f'), 1, f'{i}')
+
+        assert m.set_double(12, 123.456) == 1
+        assert m.get_double(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_double(13) == NULL
+        assert m.get_last_error() == 0    #ERR_NOT_FOUND
+        assert m.get_double(12)[0] == 123.456
+        assert m.get_last_error() == 1  # Success no error!
+
+        assert m.get(12, &value, &size, b'f') == 1
+        assert (<double*>value)[0] == 123.456
+
+    def test_getset_timestamp(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        cdef long dt_now = datetime_nsnow()
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i = 12
+        self.assertEqual(m.set(10, &i, sizeof(int), b't'), 1, f'{i}')
+
+        assert m.set_utc_timestamp(12, dt_now) == 1
+        assert m.get_utc_timestamp(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_utc_timestamp(13) == NULL
+        assert m.get_last_error() == 0  #ERR_NOT_FOUND
+        assert m.get_utc_timestamp(12)[0] == dt_now
+        assert m.get_last_error() == 1  # Success no error!
+
+        assert m.get(12, &value, &size, b't') == 1
+        assert (<long *> value)[0] == dt_now
+
+
+    def test_getset_str(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef double i = 0
+        cdef char* test_s = b'123132213123'
+
+        # Empty strings are not allowed!
+        assert m.header.tag_errors == 0
+        self.assertEqual(m.set_str(12, b'', 0), -20)
+        assert m.header.tag_errors == 1
+
+        self.assertEqual(m.set(10, &i, sizeof(double), b's'), -20, f'{i}')
+        self.assertEqual(m.set(11, &test_s, strlen(test_s), b's'), -20, f'{i}')
+        assert m.header.tag_errors == 3
+
+        self.assertEqual(m.set_str(13, b'abc', 0), 1)
+        assert m.set_str(14, b'a', 3) == -20 # ERR_UNEXPECTED_TYPE_SIZE
+        assert m.set_str(15, test_s, 3) == -20
+        assert m.set_str(16, b'dfe', 3) == 1
+
+        assert m.get_str(10) == NULL
+        assert m.get_last_error() == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert m.get_str(17) == NULL
+        assert m.get_last_error() == 0  #ERR_NOT_FOUND
+        assert m.get_str(12) == NULL
+        assert m.get_last_error() == 0  #ERR_NOT_FOUND
+
+        assert m.get_str(13) != NULL
+        self.assertEqual(m.get_last_error(), 1)
+        assert m.get_str(16) != NULL
+        assert strcmp(m.get_str(13), b'abc') == 0
+        assert strcmp(m.get_str(16), b'dfe') == 0
+
+        assert m.get(16, &value, &size, b's') == 1
+        assert strcmp((<char *> value), b'dfe') == 0
+        assert m.get_last_error() == 1  # Success no error!
+
+    def test_get_last_error(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.get_last_error_str(1),  b'No error')
+        self.assertEqual(m.get_last_error_str(0),  b'Not found')
+        self.assertEqual(m.get_last_error_str(-1), b'Duplicated tag')
+        self.assertEqual(m.get_last_error_str(-2), b'Tag type mismatch')
+        self.assertEqual(m.get_last_error_str(-3), b'Value size exceeds 1024 limit')
+        self.assertEqual(m.get_last_error_str(-4), b'FIX(35) tag or type value is not allowed')
+        self.assertEqual(m.get_last_error_str(-5), b'FIX tag=0 is not allowed')
+        self.assertEqual(m.get_last_error_str(-6), b'FIX tag>=65525 or message capacity overflow')
+        self.assertEqual(m.get_last_error_str(-7), b'System memory error when resizing the message')
+        self.assertEqual(m.get_last_error_str(-8), b'You must finish the started group before using other methods')
+        self.assertEqual(m.get_last_error_str(-9), b'Group with zero members are not allowed')
+        self.assertEqual(m.get_last_error_str(-10), b'Group member tag is a duplicate with other tags added to message')
+        self.assertEqual(m.get_last_error_str(-11), b'You must call group_start() before adding group members')
+        self.assertEqual(m.get_last_error_str(-12), b'group_tag must match to the tag of the group_start()')
+        self.assertEqual(m.get_last_error_str(-13), b'Too many tags in the group, max 127 allowed')
+        self.assertEqual(m.get_last_error_str(-14), b'You must always add the first group item with the first tag in the group tag list')
+        self.assertEqual(m.get_last_error_str(-15), b'Group element is out of bounds, given at group_start()')
+        self.assertEqual(m.get_last_error_str(-16), b'Group member `tag` in not in tag list at group_start()')
+        self.assertEqual(m.get_last_error_str(-17), b'Trying to finish group with incomplete elements count added, as expected at group_start()')
+        self.assertEqual(m.get_last_error_str(-18), b'You must add group tags in the same order as tag groups at group_start()')
+        self.assertEqual(m.get_last_error_str(-19), b'Group data is corrupted')
+        self.assertEqual(m.get_last_error_str(-20), b'Tag actual value or size does not match expected type size/value boundaries')
+
+        self.assertEqual(m.get_last_error_str(-21), b'unknown error code')

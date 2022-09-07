@@ -1,7 +1,9 @@
 from libc.stdlib cimport calloc, realloc, free
+from libc.stdio cimport printf
 from libc.string cimport memcpy, memset, strlen
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
+from uberhf.includes.utils cimport strlcpy
 from uberhf.orders.fix_tag_tree cimport binary_tree_destroy, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
 DEF FIX_MAGIC = 22093
 
@@ -27,6 +29,7 @@ DEF ERR_GROUP_TAG_NOT_INGROUP  = -16
 DEF ERR_GROUP_NOT_COMPLETED    = -17
 DEF ERR_GROUP_TAG_WRONG_ORDER  = -18
 DEF ERR_GROUP_CORRUPTED        = -19
+DEF ERR_UNEXPECTED_TYPE_SIZE   = -20
 
 
 
@@ -42,6 +45,7 @@ cdef class FIXBinaryMsg:
         self.tag_tree = binary_tree_create(tag_tree_capacity)
 
         self.open_group = NULL
+        self.last_error = 1
 
         self.header = <FIXBinaryHeader*>self._data
         self.header.magic_number = FIX_MAGIC
@@ -59,6 +63,57 @@ cdef class FIXBinaryMsg:
         if self.tag_tree != NULL:
             binary_tree_destroy(self.tag_tree)
             self.tag_tree = NULL
+
+    cdef int get_last_error(self) nogil:
+        return self.last_error
+
+    cdef const char* get_last_error_str(self, int e) nogil:
+        if e > 0:
+            return b'No error'
+        elif e == ERR_NOT_FOUND:
+            return b'Not found'
+        elif e == ERR_FIX_DUPLICATE_TAG:
+            return b'Duplicated tag'
+        elif e == ERR_FIX_TYPE_MISMATCH:
+            return b'Tag type mismatch'
+        elif e == ERR_FIX_VALUE_TOOLONG:
+            return b'Value size exceeds 1024 limit'
+        elif e == ERR_FIX_NOT_ALLOWED:
+            return b'FIX(35) tag or type value is not allowed'
+        elif e == ERR_FIX_ZERO_TAG:
+            return b'FIX tag=0 is not allowed'
+        elif e == ERR_DATA_OVERFLOW:
+            return b'FIX tag>=65525 or message capacity overflow'
+        elif e == ERR_MEMORY_ERROR:
+            return b'System memory error when resizing the message'
+        elif e == ERR_GROUP_NOT_FINISHED:
+            return b'You must finish the started group before using other methods'
+        elif e == ERR_GROUP_EMPTY:
+            return b'Group with zero members are not allowed'
+        elif e == ERR_GROUP_DUPLICATE_TAG:
+            return b'Group member tag is a duplicate with other tags added to message'
+        elif e == ERR_GROUP_NOT_STARTED:
+            return b'You must call group_start() before adding group members'
+        elif e == ERR_GROUP_NOT_MATCH:
+            return b'group_tag must match to the tag of the group_start()'
+        elif e == ERR_GROUP_TOO_MANY:
+            return b'Too many tags in the group, max 127 allowed'
+        elif e == ERR_GROUP_START_TAG_EXPECTED:
+            return b'You must always add the first group item with the first tag in the group tag list'
+        elif e == ERR_GROUP_EL_OVERFLOW:
+            return b'Group element is out of bounds, given at group_start()'
+        elif e == ERR_GROUP_TAG_NOT_INGROUP:
+            return b'Group member `tag` in not in tag list at group_start()'
+        elif e == ERR_GROUP_NOT_COMPLETED:
+            return b'Trying to finish group with incomplete elements count added, as expected at group_start()'
+        elif e == ERR_GROUP_TAG_WRONG_ORDER:
+            return b'You must add group tags in the same order as tag groups at group_start()'
+        elif e == ERR_GROUP_CORRUPTED:
+            return b'Group data is corrupted'
+        elif e == ERR_UNEXPECTED_TYPE_SIZE:
+            return b'Tag actual value or size does not match expected type size/value boundaries'
+
+        return b'unknown error code'
 
     cdef bint is_valid(self) nogil:
         return self.header.magic_number == FIX_MAGIC and \
@@ -164,6 +219,9 @@ cdef class FIXBinaryMsg:
             self.header.tag_errors += 1
             # MsgType must be set at constructor
             return ERR_FIX_NOT_ALLOWED
+        if value_size == 0:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
         if value_size > 1024:
             # Set message as invalid, because we have failed to add new tag
             self.header.tag_errors += 1
@@ -199,13 +257,20 @@ cdef class FIXBinaryMsg:
         rec.tag = tag
         rec.value_type = value_type
         rec.value_len = value_size
-
-        if value_type == b's':
-            cyassert(strlen(<char*>value) + 1 == value_size)   # strlen mismatch, must include \0, and check if value != &((*char)some_string)
-            cyassert((<char*>value)[value_size-1] == b'\0')    # String must be null-terminated!
-
-        memcpy(self.values + last_position + sizeof(FIXRec), value, value_size)
         self.header.last_position += sizeof(FIXRec) + value_size
+
+        cdef char * str_dest = NULL
+        if value_type == b's':
+            str_dest = <char *> (self.values + last_position + sizeof(FIXRec))
+            rc = strlcpy(str_dest, <char *> value, value_size)
+            if rc != value_size - 1:
+                # Highly likely - argument (char* value) passed as (&value)
+                str_dest[0] = b'\0'  # Make this string empty
+                self.header.tag_errors += 1
+                return ERR_UNEXPECTED_TYPE_SIZE
+        else:
+            memcpy(self.values + last_position + sizeof(FIXRec), <char *> value, value_size)
+
         return 1
 
     cdef int get(self, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
@@ -396,6 +461,12 @@ cdef class FIXBinaryMsg:
         if value_type == b'\x07' or value_type == b'\x00':
             self.header.tag_errors += 1
             return ERR_FIX_NOT_ALLOWED
+        if value_size == 0:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        if value_size > 1024:
+            self.header.tag_errors += 1
+            return ERR_FIX_VALUE_TOOLONG
 
         if group_tag != self.open_group.fix_rec.tag:
             self.header.tag_errors += 1
@@ -466,15 +537,22 @@ cdef class FIXBinaryMsg:
         rec.value_type = value_type
         rec.value_len = value_size
 
-        #cybreakpoint(group_tag == 10 and tag == 17)
-        if value_type == b's':
-            cyassert(strlen(<char*>value) + 1 == value_size)   # strlen mismatch, must include \0, and check if value != &((*char)some_string)
-            cyassert((<char*>value)[value_size-1] == b'\0')    # String must be null-terminated!
-
-        memcpy(self.values + last_position + sizeof(FIXRec), value, value_size)
         self.header.last_position += sizeof(FIXRec) + value_size
         self.open_group.fix_rec.value_len += sizeof(FIXRec) + value_size
         self.open_group.current_tag_len += 1
+
+        cdef char* str_dest = NULL
+        if value_type == b's':
+            str_dest =<char *>(self.values + last_position + sizeof(FIXRec))
+            rc = strlcpy(str_dest, <char*>value, value_size)
+            if rc != value_size-1:
+                # Highly likely - argument (char* value) passed as (&value)
+                str_dest[0] = b'\0' # Make this string empty
+                self.header.tag_errors += 1
+                return ERR_UNEXPECTED_TYPE_SIZE
+        else:
+            memcpy(self.values + last_position + sizeof(FIXRec), <char*>value, value_size)
+
         return 1
 
     cdef int group_get(self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
@@ -628,3 +706,125 @@ cdef class FIXBinaryMsg:
             return ERR_GROUP_CORRUPTED
 
         return rec.grp_n_elements
+
+    #
+    #  Primitive type getters / setters
+    #
+    #
+    cdef int set_int(self, uint16_t tag, int value) nogil:
+        return self.set(tag, &value, sizeof(int), b'i')
+
+    cdef int* get_int(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef int rc = self.get(tag, &value, &size, b'i')
+        if rc > 0 and size == sizeof(int):
+            return <int*>value
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
+
+    cdef int set_bool(self, uint16_t tag, bint value) nogil:
+        if value != 0 and value != 1:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        cdef char v = <char>value
+        return self.set(tag, &v, sizeof(char), b'b')
+
+    cdef bint* get_bool(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef int rc = self.get(tag, &value, &size, b'b')
+        if rc > 0 and size == sizeof(char):
+            return <bint*>value
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
+
+    cdef int set_char(self, uint16_t tag, char value) nogil:
+        if value < 20 or value == 127:
+            # All negative and control ASCII char are not allowed
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+
+        return self.set(tag, &value, sizeof(char), b'c')
+
+    cdef char* get_char(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef int rc = self.get(tag, &value, &size, b'c')
+        if rc > 0 and size == sizeof(char):
+            return <char*>value
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
+
+    cdef int set_double(self, uint16_t tag, double value) nogil:
+        return self.set(tag, &value, sizeof(double), b'f')
+
+    cdef double* get_double(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef int rc = self.get(tag, &value, &size, b'f')
+        if rc > 0 and size == sizeof(double):
+            return <double*>value
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
+
+    cdef int set_utc_timestamp(self, uint16_t tag, long value_ns) nogil:
+        return self.set(tag, &value_ns, sizeof(long), b't')
+
+    cdef long* get_utc_timestamp(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef int rc = self.get(tag, &value, &size, b't')
+        if rc > 0 and size == sizeof(long):
+            return <long*>value
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
+
+    cdef int set_str(self, uint16_t tag, char *value, uint16_t length) nogil:
+        if length == 0:
+            length = strlen(value)
+        if length == 0:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        return self.set(tag, value, length+1, b's')
+
+    cdef char * get_str(self, uint16_t tag) nogil:
+        self.last_error = 1
+        cdef void* value
+        cdef uint16_t size
+        cdef char* result
+        cdef int rc = self.get(tag, &value, &size, b's')
+        result = <char *> value
+        if rc > 0 and size > 1 and result[0] != b'\0':
+            return result
+        else:
+            if rc > 0:
+                self.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.last_error = rc
+            return NULL
