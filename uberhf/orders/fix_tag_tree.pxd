@@ -8,6 +8,8 @@ ctypedef struct FIXTagBinaryTree:
     uint16_t magic
     uint16_t size
     uint16_t capacity
+    uint16_t last_tag
+    uint16_t last_tag_idx
     FIXOffsetMap * elements
 
 

@@ -202,7 +202,7 @@ class CyTagTreeTestCase(unittest.TestCase):
             binary_tree_set_offset(tree, i+1, i)
 
         assert tree.size == 100
-        self.assertEqual(sizeof(FIXTagBinaryTree), 16)
+        self.assertEqual(sizeof(FIXTagBinaryTree), 24)
         self.assertEqual(sizeof(FIXOffsetMap), 4)
 
         binary_tree_destroy(tree)

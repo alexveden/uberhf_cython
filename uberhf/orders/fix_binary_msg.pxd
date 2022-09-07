@@ -13,13 +13,10 @@ ctypedef struct FIXBinaryHeader:
     uint16_t n_reallocs
     uint16_t tag_errors
 
-
 ctypedef struct FIXRec:
     uint16_t tag
     char value_type
     uint16_t value_len
-
-
 
 ctypedef struct GroupRec:
     FIXRec fix_rec
