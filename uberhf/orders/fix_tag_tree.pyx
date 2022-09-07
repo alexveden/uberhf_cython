@@ -11,8 +11,10 @@ cdef extern from *:
         This code is a ultra-fast implementation of ceil((x+y)/2)
     */
     #define avg_ceil(x, y) ( ((x+y)/2 + ((x+y) % 2 != 0) ))
+    #define avg(x, y) ( (x+y)/2 )
     """
     uint16_t avg_ceil(uint16_t x, uint16_t y) nogil
+    uint16_t avg(uint16_t x, uint16_t y) nogil
 
 DEF BINARY_TREE_MAGIC = 22906
 DEF RESULT_ERROR =   	65535 # USHRT_MAX
@@ -133,7 +135,8 @@ cdef uint16_t binary_tree_set_offset(FIXTagBinaryTree * tree, uint16_t tag, uint
             lo = 0
             hi = tree_size
             while lo < hi:
-                mid = <uint16_t>((lo + hi) / 2)
+                #mid = <uint16_t>((lo + hi) / 2)
+                mid = avg(lo, hi)
                 if tree.elements[mid].tag < tag:
                     lo = mid + 1
                 else:
