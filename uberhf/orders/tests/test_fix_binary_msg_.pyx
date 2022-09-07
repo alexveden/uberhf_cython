@@ -488,6 +488,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef uint16_t value_size
 
         self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), 1)
+
+        self.assertEqual(m.group_finish(10), -17) # ERR_GROUP_NOT_COMPLETED
+
         cdef GroupRec * g = m.open_group
         assert g != NULL
 
@@ -720,6 +723,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 self.assertEqual(m.group_add_tag(10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
 
             self.assertEqual(m.group_get(10, j, 1, &val_data, &val_size, b'i'), -8) # ERR_GROUP_NOT_FINISHED
+            self.assertEqual(m.group_count(10), -8) # ERR_GROUP_NOT_FINISHED
 
     def test_group_get_errors__not_found(self):
         # Exact match no resize
@@ -742,6 +746,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_get(101, 0, 1, &val_data, &val_size, b'i'), 0) # ERR_NOT_FOUND
 
+        self.assertEqual(m.group_count(101), 0)  # ERR_NOT_FOUND
+
     def test_group_get_errors__tag_zero(self):
         # Exact match no resize
         cdef FIXBinaryMsg m
@@ -763,6 +769,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_get(0, 1, 1, &val_data, &val_size, b'i'), -5) # ERR_FIX_ZERO_TAG
         self.assertEqual(m.group_get(10, 1, 0, &val_data, &val_size, b'i'), -5)  # ERR_FIX_ZERO_TAG
+
+        self.assertEqual(m.group_count(0), -5)  # ERR_FIX_ZERO_TAG
 
 
     def test_group_get_errors__fix_rec_type_mismach(self):
@@ -788,6 +796,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         # Corrupting fix rec type!
         g.fix_rec.value_type = b'w'
         self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+        self.assertEqual(m.group_count(10), -19)  # ERR_GROUP_CORRUPTED
 
 
     def test_group_get_errors__el_out_of_bounds(self):
@@ -982,6 +991,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual(m.group_add_tag(t, t + 7, s, strlen(s)+1, b's'), 1, f'k={k}')
                 self.assertEqual(m.group_finish(t), 1, f't={t} k={k}')
 
+                self.assertEqual(m.group_count(t), n_elements)
 
                 for k in range(n_elements):
                     self.assertEqual(m.group_get(t, k, t + 1, &value, &value_size, b'i'), 1,
@@ -1024,3 +1034,157 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 assert (<int *> value)[0] == t
                 assert value_size == sizeof(int)
                 t += 1
+
+    def test_group_overflow__group_start(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i, t, j
+        cdef int val
+
+        # Exclude zero tag error and tag 35 error
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) + 1
+
+        for i in range(0, USHRT_MAX):
+            if i == 0:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
+            elif i == 35:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
+            else:
+                if i < max_records:
+                    self.assertEqual(m.set(i, &i, sizeof(int), b'i'), 1, f'{i}')
+                else:
+                    break
+
+        # No bytes left in the buffer
+        self.assertEqual(m.header.data_size, USHRT_MAX)
+        self.assertEqual(m.header.last_position, 65520)  # Real bytes written
+
+        self.assertEqual(m.group_start(max_records + 10, 2, 3, [1, 3, 4]), -6)
+        #
+        # for t in range(1, USHRT_MAX):
+        #     self.assertEqual(m.group_start(t, 2, 3, [1, 3, 4]), 1)
+        #     for j in range(2):
+        #         for i in [1, 3, 4]:
+        #             val = (j+1) * 100 + i
+        #             self.assertEqual(m.group_add_tag(t, i, &val, sizeof(int), b'i'), 1, f'i={i}')
+        #
+        #     self.assertEqual(m.group_finish(t), 1)
+
+    def test_group_overflow__group_add_tag(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i, t, j
+        cdef int val
+
+        # Exclude zero tag error and tag 35 error
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
+
+
+        for i in range(0, USHRT_MAX):
+            if i == 0:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
+            elif i == 35:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
+            else:
+                if i < max_records:
+                    self.assertEqual(m.set(i, &i, sizeof(int), b'i'), 1, f'{i}')
+                else:
+                    break
+
+        # No bytes left in the buffer
+        self.assertEqual(sizeof(GroupRec), 14)
+        self.assertEqual(m.header.data_size, 65450)
+        self.assertEqual(m.header.last_position,  65410)  # Real bytes written
+
+        # 125 bytes remaining to 65535
+        # Group start size = 26 bytes
+        self.assertEqual(m.group_start(max_records + 10,
+                                       10,  # N elements
+                                       1,  # n - tags
+                                       [max_records + 11]),
+                         1)
+
+        # 99 bytes remaining for msg size (10 = FIXRec(6) + int(4))
+        for i in range(10):
+            if i < 8:
+                # Good
+                self.assertEqual(m.group_add_tag(max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
+            else:
+                # Overflow!
+                self.assertEqual(m.group_add_tag(max_records + 10, max_records + 11, &i, sizeof(int), b'i'), -6, f'i={i}')
+
+    def test_group_overflow__group_finish(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i, t, j
+        cdef int val
+
+        # Exclude zero tag error and tag 35 error
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
+
+        for i in range(0, USHRT_MAX):
+            if i == 0:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
+            elif i == 35:
+                self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
+            else:
+                if i < max_records:
+                    self.assertEqual(m.set(i, &i, sizeof(int), b'i'), 1, f'{i}')
+                else:
+                    break
+
+        # No bytes left in the buffer
+        self.assertEqual(sizeof(GroupRec), 14)
+        self.assertEqual(m.header.data_size, 65450)
+        self.assertEqual(m.header.last_position, 65410)  # Real bytes written
+
+        # 125 bytes remaining to 65535
+        # Group start size = 30 bytes
+        self.assertEqual(m.group_start(max_records + 10,
+                                       8,  # N elements
+                                       5,  # n - tags
+                                       # Tags must be unique
+                                       [max_records + 11,
+                                        max_records + 12,
+                                        max_records + 13,
+                                        max_records + 14,
+                                        max_records + 15
+                                        ]),
+                         1)
+
+        # 95 bytes remaining for msg size (10 = FIXRec(6) + int(4))
+        for i in range(8):
+            self.assertEqual(m.group_add_tag(max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
+
+        # No room for extra FIXRec(6) bytes, overflow
+        self.assertEqual(m.group_finish(max_records + 10), -6)
+
+        self.assertEqual(m.group_count(max_records + 10), -6) # ERR_DATA_OVERFLOW
+
+
+    def test_group_count_errors(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+
+        cdef int i  = 0
+        cdef int val
+
+        # Exclude zero tag error and tag 35 error
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
+
+        self.assertEqual(m.set(10, &i, sizeof(int), b'i'), 1, f'{i}')
+        self.assertEqual(m.set(10, &i, sizeof(int), b'i'), -1, f'{i}') # DUPLICATE
+
+        self.assertEqual(m.group_count(10), -1)
+        self.assertEqual(m.group_count(USHRT_MAX-10), -6) # ERR_DATA_OVERFLOW

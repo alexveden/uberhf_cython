@@ -38,6 +38,7 @@ cdef class FIXBinaryMsg:
     cdef FIXBinaryHeader* header
 
     cdef int _request_new_space(self, size_t extra_size) nogil
+    cdef bint is_valid(self) nogil
     cdef int set(self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil
     cdef int get(self, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
 
@@ -45,4 +46,5 @@ cdef class FIXBinaryMsg:
     cdef int group_add_tag(self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil
     cdef int group_finish(self, uint16_t group_tag) nogil
     cdef int group_get(self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
+    cdef int group_count(self, uint16_t group_tag) nogil
 

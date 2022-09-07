@@ -51,7 +51,6 @@ cdef class FIXBinaryMsg:
         self.header.n_reallocs = 0
         self.header.tag_duplicates = 0
 
-
     def __dealloc__(self):
         if self._data != NULL:
             free(self._data)
@@ -61,6 +60,11 @@ cdef class FIXBinaryMsg:
             binary_tree_destroy(self.tag_tree)
             self.tag_tree = NULL
 
+    cdef bint is_valid(self) nogil:
+        return self.header.magic_number == FIX_MAGIC and \
+               self.header.last_position < USHRT_MAX and \
+               self.header.tag_duplicates == 0 and \
+               self.header.msg_type > 0
 
     cdef int _request_new_space(self, size_t extra_size) nogil:
         """
@@ -72,6 +76,7 @@ cdef class FIXBinaryMsg:
         cyassert(self.header.last_position <= USHRT_MAX)
 
         if <uint16_t>(USHRT_MAX - self.header.last_position) <= extra_size:
+            self.header.last_position = USHRT_MAX
             return ERR_DATA_OVERFLOW
 
         cdef size_t data_size = self.header.data_size
@@ -84,6 +89,7 @@ cdef class FIXBinaryMsg:
 
         if new_size == USHRT_MAX and data_size == USHRT_MAX:
             # Allow first max capacity resize request to pas
+            self.header.last_position = USHRT_MAX
             return ERR_DATA_OVERFLOW
 
         # Only new_size increase allowed!
@@ -102,6 +108,7 @@ cdef class FIXBinaryMsg:
         if self._data == NULL:
             # Memory error!
             self.header = NULL
+            self.values = NULL
             return ERR_MEMORY_ERROR
 
         # Zero memory as well, because realloc doesn't do this by default
@@ -143,6 +150,7 @@ cdef class FIXBinaryMsg:
                            types b'\x07' and '\x00' are not allowed, and reserved!        
         :return: negative on error, positive on success 
         """
+        cyassert(self.header != NULL)
         if self.open_group != NULL:
             return ERR_GROUP_NOT_FINISHED
 
@@ -218,6 +226,7 @@ cdef class FIXBinaryMsg:
         :param value_type: the same char value as given in set method
         :return: positive on success, negative on error, zero if not found
         """
+        cyassert(self.header != NULL)
         if self.open_group != NULL:
             return ERR_GROUP_NOT_FINISHED
         if value_type == b'\x07' or value_type == b'\x00':
@@ -288,7 +297,7 @@ cdef class FIXBinaryMsg:
                 ...
                 uint16_t *el_n offset (len grp_n_elements)
         """
-
+        cyassert(self.header != NULL)
         if self.open_group != NULL:
             return ERR_GROUP_NOT_FINISHED
         if grp_n_elements < 1:
@@ -364,12 +373,15 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_add_tag(self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        cyassert(self.header != NULL)
         if self.open_group == NULL:
             return ERR_GROUP_NOT_STARTED
         if group_tag == 0:
             return ERR_FIX_ZERO_TAG
         if tag == 0:
             return ERR_FIX_ZERO_TAG
+        if value_type == b'\x07' or value_type == b'\x00':
+            return ERR_FIX_NOT_ALLOWED
 
         if group_tag != self.open_group.fix_rec.tag:
             return ERR_GROUP_NOT_MATCH
@@ -446,6 +458,7 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_get(self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
+        cyassert(self.header != NULL)
         # Reset pointers before handling any errors
         value[0] = NULL
         value_size[0] = 0
@@ -460,8 +473,15 @@ cdef class FIXBinaryMsg:
         cdef GroupRec * rec
 
         cdef uint16_t data_offset = binary_tree_get_offset(self.tag_tree, group_tag)
-        if data_offset == USHRT_MAX-1:  #DEF RESULT_NOT_FOUND = 	65534 # USHRT_MAX-1
-            return ERR_NOT_FOUND
+        if data_offset >= USHRT_MAX-10:
+            if data_offset == USHRT_MAX-1:
+                # Tag not found
+                return ERR_NOT_FOUND
+            if data_offset == USHRT_MAX-2:
+                # Possibly duplicate tag
+                return ERR_FIX_DUPLICATE_TAG
+            # Likely tag number is too high, other generic error, we must stop anyway
+            return ERR_DATA_OVERFLOW
 
         # New value added successfully
         rec = <GroupRec *> (self.values + data_offset)
@@ -525,6 +545,7 @@ cdef class FIXBinaryMsg:
         return 1
 
     cdef int group_finish(self, uint16_t group_tag) nogil:
+        cyassert(self.header != NULL)
         if self.open_group == NULL:
             return ERR_GROUP_NOT_STARTED
         if group_tag != self.open_group.fix_rec.tag:
@@ -549,3 +570,31 @@ cdef class FIXBinaryMsg:
         self.open_group = NULL
 
         return 1
+
+    cdef int group_count(self, uint16_t group_tag) nogil:
+        cyassert(self.header != NULL)
+        if self.header.last_position == USHRT_MAX:
+            return ERR_DATA_OVERFLOW
+        if group_tag == 0:
+            return ERR_FIX_ZERO_TAG
+        if self.open_group != NULL:
+           return ERR_GROUP_NOT_FINISHED
+
+        cdef uint16_t data_offset = binary_tree_get_offset(self.tag_tree, group_tag)
+        if data_offset >= USHRT_MAX-10:
+            if data_offset == USHRT_MAX-1:
+                # Tag not found
+                return ERR_NOT_FOUND
+            if data_offset == USHRT_MAX-2:
+                # Possibly duplicate tag
+                return ERR_FIX_DUPLICATE_TAG
+            # Likely tag number is too high, other generic error, we must stop anyway
+            return ERR_DATA_OVERFLOW
+
+        # New value added successfully
+        cdef GroupRec * rec = <GroupRec *> (self.values + data_offset)
+
+        if rec.fix_rec.value_type != b'\x07':
+            return ERR_GROUP_CORRUPTED
+
+        return rec.grp_n_elements
