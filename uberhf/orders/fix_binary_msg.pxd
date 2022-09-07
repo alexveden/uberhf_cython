@@ -11,7 +11,7 @@ ctypedef struct FIXBinaryHeader:
     uint16_t last_position
     uint16_t data_size
     uint16_t n_reallocs
-    uint16_t tag_duplicates
+    uint16_t tag_errors
 
 
 ctypedef struct FIXRec:

@@ -27,14 +27,16 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.header.magic_number == 22093
         assert m.header.last_position == 0
         assert m.header.n_reallocs == 0
-        assert m.header.tag_duplicates == 0
+        assert m.header.tag_errors == 0
         assert m.open_group == NULL
+        assert m.is_valid() == 1
 
         m = FIXBinaryMsg(<char> b'C', 1000)
 
         assert m.header.data_size == 1000
         assert m.tag_tree.size == 0
         assert m.tag_tree.capacity == 64
+        assert m.is_valid() == 1
 
     def test_get_set_raw(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
@@ -42,6 +44,12 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         assert m.set(11, &value, sizeof(int), b'i') == 1
         assert m.tag_tree.size == 1
+        assert m.is_valid() == 1
+
+        # Not allowed type
+        assert m.set(13, &value, sizeof(int), b'\0') == -4
+        assert m.set(14, &value, sizeof(int), b'\x07') == -4
+        assert m.is_valid() == 0
 
         cdef void * p_value = NULL
         cdef uint16_t p_size = 0
@@ -60,6 +68,15 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert p_value == NULL
         assert p_size == 0
 
+        # Type not allowed
+        self.assertEqual(m.get(11, &p_value, &p_size, b'\0'), -4)
+        assert p_value == NULL
+        assert p_size == 0
+
+        self.assertEqual(m.get(11, &p_value, &p_size, b'\x07'), -4)
+        assert p_value == NULL
+        assert p_size == 0
+
     def test_set_value_size_too_long(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
         cdef int value = 123
@@ -70,6 +87,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.set(10, val, 1024, b's') == 1 # OK
         assert m.set(11, &value, 1025, b'i') == -3 # ERR_FIX_VALUE_TOOLONG
         free(val)
+
+        assert m.is_valid() == 0
 
     def test_req_new_space(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg(<char> b'C', 0)
@@ -83,7 +102,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.set(11, &value, sizeof(int), b'i') == 1
         assert m.set(11, &value, sizeof(int), b'i') == -1
         assert m.tag_tree.size == 1
-        assert m.header.tag_duplicates == 1
+        assert m.header.tag_errors == 1
 
         cdef void * p_value = NULL
         cdef uint16_t p_size = 0
@@ -92,6 +111,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.get(11, &p_value, &p_size, b'i'), -1)
         assert p_value == NULL
         assert p_size == 0
+        assert m.is_valid() == 0
 
 
     def test_get_set_multiple_base_types(self):
@@ -157,6 +177,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         prev_pos += sizeof(FIXRec) + strlen(s)+1
         assert m.header.last_position == prev_pos
+
+        assert m.is_valid() == 1
 
     def test_set_resize_regular(self):
         cdef char * s = <char*>malloc(200)
@@ -242,6 +264,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
                 prev_last_position = m.header.last_position
 
+        assert m.is_valid() == 0
         assert i == USHRT_MAX-1, i
         self.assertEqual(m.tag_tree.size, max_records-2)
         assert m.header.n_reallocs == 0
@@ -267,6 +290,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     else:
                         self.assertEqual(m.get(i, &value, &value_size, b'c'), 0, f'{i}')
 
+        assert m.is_valid() == 0
 
     def test_set_overflow_int(self):
         # Exact match no resize
@@ -403,6 +427,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert fix_data_el_offsets[0] == USHRT_MAX
         assert fix_data_el_offsets[1] == USHRT_MAX
 
+        assert m.is_valid() == 0
+
 
     def test_group_add_tag(self):
         # Exact match no resize
@@ -456,7 +482,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + base_len)
 
+        assert m.is_valid() == 0 # Group not finished
         self.assertEqual(m.group_finish(10), 1)
+        assert m.is_valid() == 1 # All good
 
         self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + sizeof(FIXRec) + base_len)
 
@@ -532,6 +560,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), 1)
         self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__already_started(self):
         # Exact match no resize
@@ -540,6 +570,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), 1)
         self.assertEqual(m.group_start(10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__empty_group(self):
         # Exact match no resize
@@ -548,6 +580,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         self.assertEqual(m.group_start(10, 0, 3, [1, 3, 4]), -9) #ERR_GROUP_EMPTY
         self.assertEqual(m.group_start(10, 1, 0, [1, 3, 4]), -9)  #ERR_GROUP_EMPTY
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__too_many_tags(self):
         # Exact match no resize
@@ -555,6 +589,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         self.assertEqual(m.group_start(10, 1, 127, [1, 3, 4]), -13) #ERR_GROUP_TOO_MANY
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__duplicate_tag_global_fixgrp(self):
         # Exact match no resize
@@ -564,6 +600,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         m.set(10, &a, sizeof(int), b'i')
         self.assertEqual(m.group_start(10, 1, 3, [1, 3, 4]), -1) #ERR_FIX_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__duplicate_tag_global(self):
         # Exact match no resize
@@ -573,6 +611,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         m.set(3, &a, sizeof(int), b'i')
         self.assertEqual(m.group_start(10, 1, 3, [1, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__duplicate_tag_group(self):
         # Exact match no resize
@@ -581,6 +621,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         # Duplicate between tag in members and group's tag
         self.assertEqual(m.group_start(10, 1, 3, [10, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__duplicate_tag_members(self):
         # Exact match no resize
@@ -589,6 +631,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         # Duplicates inside members
         self.assertEqual(m.group_start(10, 1, 3, [3, 3, 4]), -10)  #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_start_errors__tag_zero(self):
         # Exact match no resize
@@ -598,6 +642,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         # Duplicates inside members
         self.assertEqual(m.group_start(0, 1, 3, [1, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
         self.assertEqual(m.group_start(1, 1, 3, [0, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_errors__not_started(self):
         # Exact match no resize
@@ -606,6 +652,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), -11) # ERR_GROUP_NOT_STARTED
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
 
     def test_group_add_tag_errors__grp_not_match(self):
@@ -616,6 +664,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_start(10, 1, 3, [1, 3, 4]), 1)
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(11, 1, &a, sizeof(int), b'i'), -12) # ERR_GROUP_NOT_MATCH
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_errors__start_tag_expected(self):
         # Exact match no resize
@@ -625,6 +675,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_start(10, 1, 3, [1, 3, 4]), 1)
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 3, &a, sizeof(int), b'i'), -14) # ERR_GROUP_START_TAG_EXPECTED
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_errors__elements_overflow(self):
         # Exact match no resize
@@ -635,6 +687,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), -15) # ERR_GROUP_EL_OVERFLOW
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
 
     def test_group_add_tag_errors__tag_not_in_group(self):
@@ -646,6 +700,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 7, &a, sizeof(int), b'i'), -16) # ERR_GROUP_TAG_NOT_INGROUP
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_errors__tag_wrong_order_and_duplicates(self):
         # Exact match no resize
@@ -659,6 +715,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_add_tag(10, 4, &a, sizeof(int), b'i'), -10)# ERR_GROUP_DUPLICATE_TAG
         self.assertEqual(m.group_add_tag(10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
         self.assertEqual(m.group_add_tag(10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_errors__tag_wrong_order_and_duplicates_2nd_grp(self):
         # Exact match no resize
@@ -676,6 +734,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_add_tag(10, 4, &a, sizeof(int), b'i'), -10)  # ERR_GROUP_DUPLICATE_TAG
         self.assertEqual(m.group_add_tag(10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
         self.assertEqual(m.group_add_tag(10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_add_tag_zero(self):
         # Exact match no resize
@@ -686,10 +746,26 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 0, &a, sizeof(int), b'i'), -5) # ERR_FIX_ZERO_TAG
         self.assertEqual(m.group_add_tag(0, 1, &a, sizeof(int), b'i'), -5)  # ERR_FIX_ZERO_TAG
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
+
+    def test_group_add_tag_type_not_allowed(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.group_start(10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'\0'), -4) # ERR_FIX_NOT_ALLOWED
+        self.assertEqual(m.group_add_tag(10, 2, &a, sizeof(int), b'\x07'), -4)  # ERR_FIX_NOT_ALLOWED
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_finish_errors(self):
         # Exact match no resize
         cdef FIXBinaryMsg m
+        cdef void *value
+        cdef uint16_t size
 
         m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
         self.assertEqual(m.group_finish(10), -11) #ERR_GROUP_NOT_STARTED
@@ -701,12 +777,24 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef int a = 1234
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 3, &a, sizeof(int), b'i'), 1)
+
+        #
+        # Get / set also rejected when the group is open
+        #
+        self.assertEqual(m.set(123, &a, sizeof(int), b'i'), -8 ) # ERR_GROUP_NOT_FINISHED
+        self.assertEqual(m.get(123, &value, &size, b'i'), -8)  # ERR_GROUP_NOT_FINISHED
+        self.assertEqual(m.group_get(10, 1, 1, &value, &size, b'i'), -8)
+        self.assertEqual(m.group_count(10), -8)
+
         self.assertEqual(m.group_finish(10), -17)  #ERR_GROUP_NOT_COMPLETED
 
         self.assertEqual(m.group_add_tag(10, 1, &a, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 3, &a, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_finish(10), 1)  # Success
         assert m.open_group == NULL
+
+        assert m.header.tag_errors > 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_get_errors__not_finished(self):
         # Exact match no resize
@@ -724,6 +812,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
             self.assertEqual(m.group_get(10, j, 1, &val_data, &val_size, b'i'), -8) # ERR_GROUP_NOT_FINISHED
             self.assertEqual(m.group_count(10), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors == 0
+        assert m.is_valid() == 0  # Had errors
 
     def test_group_get_errors__not_found(self):
         # Exact match no resize
@@ -748,7 +838,37 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_count(101), 0)  # ERR_NOT_FOUND
 
-    def test_group_get_errors__tag_zero(self):
+    def test_group_get_errors__duplicate_tag_or_overflow(self):
+        # Exact match no resize
+        cdef FIXBinaryMsg m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
+        self.assertEqual(m.group_start(10, 2, 4, [1, 2, 3, 4]), 1)
+        val = 123
+        self.assertEqual(m.group_add_tag(10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(m.group_add_tag(10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(m.group_add_tag(10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(m.group_add_tag(10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(m.group_add_tag(10, 4, &val, sizeof(int), b'i'), 1)
+        assert m.group_finish(10) == 1
+
+        # All good
+        self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), 1)
+
+        # Oops tag dupe
+        assert m.set(10, &val, sizeof(int), b'i') == -1
+
+        self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -1) # ERR_FIX_DUPLICATE_TAG
+
+        self.assertEqual(m.group_get(USHRT_MAX-10, 0, 1, &val_data, &val_size, b'i'), -6)  # ERR_DATA_OVERFLOW
+
+        assert m.is_valid() == 0
+
+    def test_group_get_errors__tag_zero_or_not_allowed(self):
         # Exact match no resize
         cdef FIXBinaryMsg m
         cdef void* val_data = NULL
@@ -769,8 +889,13 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_get(0, 1, 1, &val_data, &val_size, b'i'), -5) # ERR_FIX_ZERO_TAG
         self.assertEqual(m.group_get(10, 1, 0, &val_data, &val_size, b'i'), -5)  # ERR_FIX_ZERO_TAG
+        self.assertEqual(m.group_get(35, 1, 1, &val_data, &val_size, b'i'), -4)  # ERR_FIX_NOT_ALLOWED
 
         self.assertEqual(m.group_count(0), -5)  # ERR_FIX_ZERO_TAG
+        self.assertEqual(m.group_count(35), -4)  # ERR_FIX_NOT_ALLOWED
+
+        # Read operation doesn't trigger msg corruption!
+        assert m.is_valid() == 1
 
 
     def test_group_get_errors__fix_rec_type_mismach(self):
@@ -797,6 +922,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         g.fix_rec.value_type = b'w'
         self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
         self.assertEqual(m.group_count(10), -19)  # ERR_GROUP_CORRUPTED
+
+        # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
+        assert m.is_valid() == 0
 
 
     def test_group_get_errors__el_out_of_bounds(self):
@@ -926,11 +1054,14 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_add_tag(10, 2, &val, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 3, &val, sizeof(int), b'i'), 1)
         assert m.group_finish(10) == 1
+        assert m.is_valid() == 1
 
         cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(GroupRec) + g.n_tags * sizeof(uint16_t))
         fix_data_el_offsets[0] = USHRT_MAX - 1
 
         self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+        # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
+        assert m.is_valid() == 0
 
     def test_group_get_errors__corrupted_start_tag(self):
         # Exact match no resize
@@ -948,6 +1079,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.group_add_tag(10, 2, &val, sizeof(int), b'i'), 1)
         self.assertEqual(m.group_add_tag(10, 3, &val, sizeof(int), b'i'), 1)
         assert m.group_finish(10) == 1
+        assert m.is_valid() == 1
 
         cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(GroupRec) + g.n_tags * sizeof(uint16_t))
 
@@ -955,6 +1087,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         trec.tag = 5
 
         self.assertEqual(m.group_get(10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+
+        assert m.is_valid() == 0
 
 
     def test_groups_resize_and_multi_types(self):
@@ -1008,7 +1142,8 @@ class CyBinaryMsgTestCase(unittest.TestCase):
             else:
                 m.set(t, &t, sizeof(int), b'i')
                 t += 1
-
+        # All should be valid
+        assert m.is_valid() == 1
         t = 1
         while t < 100:
             if t % 10 == 0:
@@ -1034,6 +1169,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 assert (<int *> value)[0] == t
                 assert value_size == sizeof(int)
                 t += 1
+
+        # All should be valid
+        assert m.is_valid() == 1
 
     def test_group_overflow__group_start(self):
         # Exact match no resize
@@ -1063,15 +1201,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         self.assertEqual(m.header.last_position, 65520)  # Real bytes written
 
         self.assertEqual(m.group_start(max_records + 10, 2, 3, [1, 3, 4]), -6)
-        #
-        # for t in range(1, USHRT_MAX):
-        #     self.assertEqual(m.group_start(t, 2, 3, [1, 3, 4]), 1)
-        #     for j in range(2):
-        #         for i in [1, 3, 4]:
-        #             val = (j+1) * 100 + i
-        #             self.assertEqual(m.group_add_tag(t, i, &val, sizeof(int), b'i'), 1, f'i={i}')
-        #
-        #     self.assertEqual(m.group_finish(t), 1)
+        assert m.is_valid() == 0
 
     def test_group_overflow__group_add_tag(self):
         # Exact match no resize
@@ -1118,6 +1248,9 @@ class CyBinaryMsgTestCase(unittest.TestCase):
             else:
                 # Overflow!
                 self.assertEqual(m.group_add_tag(max_records + 10, max_records + 11, &i, sizeof(int), b'i'), -6, f'i={i}')
+
+        assert m.is_valid() == 0
+
 
     def test_group_overflow__group_finish(self):
         # Exact match no resize
@@ -1170,6 +1303,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_count(max_records + 10), -6) # ERR_DATA_OVERFLOW
 
+        assert m.is_valid() == 0
 
     def test_group_count_errors(self):
         # Exact match no resize
@@ -1188,3 +1322,5 @@ class CyBinaryMsgTestCase(unittest.TestCase):
 
         self.assertEqual(m.group_count(10), -1)
         self.assertEqual(m.group_count(USHRT_MAX-10), -6) # ERR_DATA_OVERFLOW
+
+        assert m.is_valid() == 0
