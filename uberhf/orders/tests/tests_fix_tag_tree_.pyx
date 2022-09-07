@@ -92,12 +92,10 @@ class CyTagTreeTestCase(unittest.TestCase):
         assert binary_tree_set_offset(tree, 1, 10) == 0
         assert tree.capacity == 1
         assert binary_tree_set_offset(tree, 2, 20) == 1
-        assert tree.capacity == 2
+        assert tree.capacity == 11
         assert binary_tree_set_offset(tree, 3, 30) == 2
-        assert tree.capacity == 4
         assert binary_tree_set_offset(tree, 4, 40) == 3
         assert binary_tree_set_offset(tree, 5, 50) == 4
-        assert tree.capacity == 8
 
         assert tree.elements[0].tag == 1
         assert tree.elements[0].data_offset == 10
@@ -179,7 +177,7 @@ class CyTagTreeTestCase(unittest.TestCase):
                 self.assertEqual(binary_tree_set_offset(tree, i + 1, i), i,
                                  f'tree.capacity={tree.size}/{tree.capacity} expected_failure_at={expected_failure_at}')
 
-        assert tree.capacity == USHRT_MAX-1
+        self.assertEqual(tree.capacity, USHRT_MAX-10)
         self.assertEqual(tree.size, USHRT_MAX-10)
 
         binary_tree_destroy(tree)

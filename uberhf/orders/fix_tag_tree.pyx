@@ -88,7 +88,7 @@ cdef uint16_t binary_tree_set_offset(FIXTagBinaryTree * tree, uint16_t tag, uint
         return RESULT_ERROR
 
     if tree_size+1 > tree.capacity:
-        if not binary_tree_resize(tree, tree.capacity * 2):
+        if not binary_tree_resize(tree, tree.capacity + 10):
             return RESULT_ERROR
 
     if tree_size == 0:
