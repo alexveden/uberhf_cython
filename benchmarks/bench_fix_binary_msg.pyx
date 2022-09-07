@@ -40,16 +40,23 @@ cdef fixmsg_make_sequential(int n_elements):
     :param n_elements: 
     :return: 
     """
-    cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char>b'C', 0)
+    cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char>b'C', 2000)
     cdef int i =0
     cdef void* value
     cdef uint16_t value_size
+    cdef int rc
     #
     for i in range(n_elements):
-        m.set(i+1, &i, sizeof(int), b'i')
+        if i+1 == 35:
+            continue
+        rc = m.set_int(i+1, i)
+        assert rc > 0, rc
 
     for i in range(n_elements):
-        m.get(i+i, &value, &value_size, b'i')
+        if i+1 == 35:
+            continue
+        value = m.get_int(i+1)
+        assert value != NULL, m.get_last_error_str(m.get_last_error())
 
 cdef fixmsg_fixed_random_tags(int n_elements, int * rnd_array, int rnd_size):
     """
@@ -63,16 +70,19 @@ cdef fixmsg_fixed_random_tags(int n_elements, int * rnd_array, int rnd_size):
     :return: 
     """
 
-    cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char> b'C', 0)
+    cdef FIXBinaryMsg m = FIXBinaryMsg.__new__(FIXBinaryMsg, <char> b'C', 2000)
     cdef int i = 0
     cdef void * value
     cdef uint16_t value_size
+    cdef int rc
 
     for i in range(rnd_size):
-        assert m.set(rnd_array[i], &rnd_array[i] , sizeof(int), b'i') < 40000
+        rc = m.set_int(rnd_array[i], rnd_array[i])
+        assert rc > 0, rc
 
     for i in range(rnd_size):
-        assert m.get(rnd_array[i], &value, &value_size, b'i') < 40000
+        value = m.get_int(rnd_array[i])
+        assert value != NULL, m.get_last_error_str(m.get_last_error())
 
 cpdef main():
     cdef int msg_size = 0
@@ -85,18 +95,19 @@ cpdef main():
     msg_size = 100
     print('-'*100)
     print(f'SEQUENTIAL ACCESS {msg_size} tags/msg')
-    t_start = time.time()
+    t_start = timer_nsnow()
     for i in range(n_steps):
         fixmsg_make_sequential(msg_size)
-    t_end = time.time()
-    duration = t_end-t_start
+    t_end = timer_nsnow()
+    duration = timedelta_ns(t_end, t_start, TIMEDELTA_SEC)
+    assert duration != 0
     print(f'FixMsg speed: {n_steps/duration} msg/sec')
 
 
     print(f'RANDOM ACCESS {msg_size} tags/msg')
-    t_start = time.time()
+    t_start = timer_nsnow()
     for i in range(n_steps):
         fixmsg_fixed_random_tags(msg_size, rnd_array, 100)
-    t_end = time.time()
-    duration = t_end - t_start
+    t_end = timer_nsnow()
+    duration = timedelta_ns(t_end, t_start, TIMEDELTA_SEC)
     print(f'FixMsg speed: {n_steps/duration} msg/sec')
