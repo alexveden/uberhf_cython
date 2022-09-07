@@ -60,6 +60,23 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert p_value == NULL
         assert p_size == 0
 
+    def test_set_value_size_too_long(self):
+        cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
+        cdef int value = 123
+        cdef char * val = <char*>malloc(1024)
+        memset(val, 98, 1024)
+        val[1023] = b'\0'
+        assert strlen(val) == 1023, strlen(val)
+        assert m.set(10, val, 1024, b's') == 1 # OK
+        assert m.set(11, &value, 1025, b'i') == -3 # ERR_FIX_VALUE_TOOLONG
+        free(val)
+
+    def test_req_new_space(self):
+        cdef FIXBinaryMsg m = FIXBinaryMsg(<char> b'C', 0)
+        assert m.header.data_size == 128
+        assert m._request_new_space(1024) == 1
+        assert m.header.data_size == 128 + 1024 + (sizeof(FIXRec)+sizeof(double))*10
+
     def test_get_set_duplicate(self):
         cdef FIXBinaryMsg m = FIXBinaryMsg(<char>b'C', 0)
         cdef int value = 123
@@ -152,7 +169,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         assert m.header.data_size == 200
         assert m.set(1, s, strlen(s)+1, b's') == 1
         self.assertEqual(m.header.n_reallocs, 1)
-        self.assertEqual(m.header.data_size, 400)
+        self.assertEqual(m.header.data_size, 200 + sizeof(FIXRec) + 200 + (sizeof(FIXRec)+sizeof(double))*10)
 
         free(s)
 
@@ -175,7 +192,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         cdef char c = b'Z'
         assert m.set(2, &c, sizeof(char), b'c') == 1
         self.assertEqual(m.header.n_reallocs, 1)
-        assert m.header.data_size == (slen + sizeof(FIXRec)) * 2
+        self.assertEqual(m.header.data_size, 353)
 
         free(s)
 
@@ -196,7 +213,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
         prev_last_position = 0
 
         # Exclude zero tag error and tag 35 error
-        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(char))) + 2
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(char))) + 1
 
         for i in range(0, USHRT_MAX):
             c = <char>(i % 255)
@@ -207,7 +224,7 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                 self.assertEqual(m.set(i, &c, sizeof(char), b'c'), -4, f'{i}') # ERR_FIX_TAG35_NOTALLOWED
             else:
                 if i < max_records:
-                    self.assertEqual(m.set(i, &c, sizeof(char), b'c'), 1, f'{i}')
+                    self.assertEqual(m.set(i, &c, sizeof(char), b'c'), 1, f'{i} max_records={max_records}')
                     self.assertEqual(m.get(i, &value, &value_size, b'c'), 1, f'{i}')
                     #self.assertEqual((<char *> value)[0], c, i)
                     assert (<unsigned char *> value)[0] == c, i
@@ -217,8 +234,10 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual(int(m.header.last_position)-prev_last_position, sizeof(FIXRec) + sizeof(char))
                 else:
                     self.assertEqual(m.set(i, &c, sizeof(char), b'c'), -6, f'{i}') # ERR_DATA_OVERFLOW
-                    # Not found
-                    self.assertEqual(m.get(i, &value, &value_size, b'c'), 0, f'{i}')
+                    if i >= USHRT_MAX - 10:
+                        self.assertEqual(m.get(i, &value, &value_size, b'c'), -6, f'{i}')
+                    else:
+                        self.assertEqual(m.get(i, &value, &value_size, b'c'), 0, f'{i}')
                     assert m.header.last_position == prev_last_position, i
 
                 prev_last_position = m.header.last_position
@@ -243,7 +262,10 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual((<unsigned char *> value)[0], c, f'i={i}  sizeof(FIXRec)={sizeof(FIXRec)}')
                     assert value_size == 1
                 else:
-                    self.assertEqual(m.get(i, &value, &value_size, b'c'), 0, f'{i}')
+                    if i >= USHRT_MAX - 10:
+                        self.assertEqual(m.get(i, &value, &value_size, b'c'), -6, f'{i}')
+                    else:
+                        self.assertEqual(m.get(i, &value, &value_size, b'c'), 0, f'{i}')
 
 
     def test_set_overflow_int(self):
@@ -279,7 +301,11 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual(int(m.header.last_position) - prev_last_position, sizeof(FIXRec) + sizeof(int))
                 else:
                     self.assertEqual(m.set(i, &i, sizeof(int), b'i'), -6, f'{i}')  # ERR_DATA_OVERFLOW
-                    self.assertEqual(m.get(i, &value, &value_size, b'i'), 0, f'{i}')
+                    if i >= USHRT_MAX-10:
+                        # Tag value is too high, it returns overflow
+                        self.assertEqual(m.get(i, &value, &value_size, b'i'), -6, f'{i}')
+                    else:
+                        self.assertEqual(m.get(i, &value, &value_size, b'i'), 0, f'{i}')
 
                 prev_last_position = m.header.last_position
 
@@ -302,7 +328,12 @@ class CyBinaryMsgTestCase(unittest.TestCase):
                     self.assertEqual((<int *> value)[0], i, f'{i}')
                     assert value_size == sizeof(int)
                 else:
-                    self.assertEqual(m.get(i, &value, &value_size, b'i'), 0, f'{i}')
+                    if i >= USHRT_MAX - 10:
+                        # Tag value is too high, it returns overflow
+                        self.assertEqual(m.get(i, &value, &value_size, b'i'), -6, f'{i}')
+                    else:
+                        self.assertEqual(m.get(i, &value, &value_size, b'i'), 0, f'{i}')
+
 
 
     def test_set_overflow_int_with_resize(self):

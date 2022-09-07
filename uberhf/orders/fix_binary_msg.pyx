@@ -2,7 +2,7 @@ from libc.stdlib cimport calloc, realloc, free
 from libc.string cimport memcpy, memset, strlen
 from libc.limits cimport USHRT_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
-from uberhf.orders.fix_tag_tree cimport FIXTagBinaryTree, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
+from uberhf.orders.fix_tag_tree cimport binary_tree_destroy, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
 DEF FIX_MAGIC = 22093
 
 
@@ -31,7 +31,7 @@ DEF ERR_GROUP_CORRUPTED        = -19
 
 
 cdef class FIXBinaryMsg:
-    def __cinit__(self, char msg_type, uint16_t data_size):
+    def __cinit__(self, char msg_type, uint16_t data_size, uint16_t tag_tree_capacity=64):
         cdef uint16_t _data_size = max(data_size, 128)
         # Use calloc to set memory to zero!
         self._data = calloc(sizeof(FIXBinaryHeader) + _data_size, 1)
@@ -39,7 +39,7 @@ cdef class FIXBinaryMsg:
             raise MemoryError()
         self.values = self._data + sizeof(FIXBinaryHeader)
 
-        self.tag_tree = binary_tree_create(64)
+        self.tag_tree = binary_tree_create(tag_tree_capacity)
 
         self.open_group = NULL
 
@@ -50,6 +50,17 @@ cdef class FIXBinaryMsg:
         self.header.last_position = 0
         self.header.n_reallocs = 0
         self.header.tag_duplicates = 0
+
+
+    def __dealloc__(self):
+        if self._data != NULL:
+            free(self._data)
+            self._data = NULL
+
+        if self.tag_tree != NULL:
+            binary_tree_destroy(self.tag_tree)
+            self.tag_tree = NULL
+
 
     cdef int _request_new_space(self, size_t extra_size) nogil:
         """
@@ -68,7 +79,8 @@ cdef class FIXBinaryMsg:
         if self.header.last_position + extra_size <= data_size:
             return 1
 
-        cdef size_t new_size = min(USHRT_MAX, data_size * 2)
+        # Resize to extra_size + approx 10 double tags room
+        cdef size_t new_size = min(USHRT_MAX, data_size + extra_size + (sizeof(FIXRec)+sizeof(double))*10)
 
         if new_size == USHRT_MAX and data_size == USHRT_MAX:
             # Allow first max capacity resize request to pas
@@ -142,7 +154,7 @@ cdef class FIXBinaryMsg:
         if tag == 35:
             # MsgType must be set at constructor
             return ERR_FIX_NOT_ALLOWED
-        if value_size > 255:
+        if value_size > 1024:
             return ERR_FIX_VALUE_TOOLONG
 
         cdef int rc = 0
@@ -153,10 +165,18 @@ cdef class FIXBinaryMsg:
 
         cdef FIXRec * rec
 
-        if binary_tree_set_offset(self.tag_tree, tag, last_position) > USHRT_MAX-10:
-            # Duplicate or error
-            self.header.tag_duplicates += 1
-            return ERR_FIX_DUPLICATE_TAG
+        cdef uint16_t _data_offset_idx = binary_tree_set_offset(self.tag_tree, tag, last_position)
+
+        if _data_offset_idx  >= USHRT_MAX-10:
+            if _data_offset_idx == USHRT_MAX-2: #RESULT_DUPLICATE = 	65533 # USHRT_MAX-2
+                # Duplicate or error
+                self.header.tag_duplicates += 1
+                return ERR_FIX_DUPLICATE_TAG
+            else:
+                # Other generic error, typically oveflow
+                return ERR_DATA_OVERFLOW
+
+
 
         # New value added successfully
         rec = <FIXRec*>(self.values + last_position)
@@ -220,13 +240,15 @@ cdef class FIXBinaryMsg:
             return 1
 
         cdef uint16_t data_offset = binary_tree_get_offset(self.tag_tree, tag)
-        if data_offset == USHRT_MAX-1:
-            # Tag not found
-            return ERR_NOT_FOUND
-
-        if data_offset >= USHRT_MAX-2:
-            # Possibly duplicate tag, or other generic error, we must stop anyway
-            return ERR_FIX_DUPLICATE_TAG
+        if data_offset >= USHRT_MAX-10:
+            if data_offset == USHRT_MAX-1:
+                # Tag not found
+                return ERR_NOT_FOUND
+            if data_offset == USHRT_MAX-2:
+                # Possibly duplicate tag
+                return ERR_FIX_DUPLICATE_TAG
+            # Likely tag number is too high, other generic error, we must stop anyway
+            return ERR_DATA_OVERFLOW
 
         rec = <FIXRec *> (self.values + data_offset)
 
@@ -527,8 +549,3 @@ cdef class FIXBinaryMsg:
         self.open_group = NULL
 
         return 1
-
-    def __dealloc__(self):
-        if self._data != NULL:
-            free(self._data)
-            self._data = NULL
