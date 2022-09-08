@@ -1,5 +1,4 @@
 from uberhf.datafeed.quote_info import QuoteInfo
-from uberhf.orders.orders_common import OrderTimeInForce
 
 
 class SmartOrderBase:
@@ -48,6 +47,4 @@ class SmartOrderBase:
 
 
 if __name__ == '__main__':
-    #OrderTime = OrderTimeInForce()
-    print(OrderTime.FOK)
-    print(OrderTime.DAY)
+    pass
