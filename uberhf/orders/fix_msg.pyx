@@ -45,9 +45,8 @@ DEF ERR_GROUP_NOT_COMPLETED    = -17
 DEF ERR_GROUP_TAG_WRONG_ORDER  = -18
 DEF ERR_GROUP_CORRUPTED        = -19
 DEF ERR_UNEXPECTED_TYPE_SIZE   = -20
-DEF ERR_TAG_RESIZE_REQUIRED    = -21
-DEF ERR_DATA_RESIZE_REQUIRED   = -22
-DEF ERR_DATA_READ_ONLY         = -23
+DEF ERR_RESIZE_REQUIRED        = -21
+DEF ERR_DATA_READ_ONLY         = -22
 
 
 cdef class FIXMsg:
@@ -245,22 +244,33 @@ cdef class FIXMsg:
         return TAG_NOT_FOUND
 
     @staticmethod
-    cdef bint has_capacity(FIXMsgStruct * self, uint8_t add_tags, uint16_t new_rec_size) nogil:
-        cyassert(new_rec_size > 0)
+    cdef int has_capacity(FIXMsgStruct * self, uint8_t add_tags, uint16_t new_rec_size) nogil:
+        """
+        Checks is FIXMsgStruct * self has a capacity for addint extra `add_tags` and `new_rec_size` of data
+        :param self: 
+        :param add_tags: number of tags adding 
+        :param new_rec_size: number of bytes (including sizeof(FIXRec)) 
+        :return: 1 on success, <= 0 on error
+        """
+        if add_tags == 0 or new_rec_size == 0:
+            return 0
 
         if self.header.tags_count == UCHAR_MAX:
-            return False
+            return ERR_DATA_OVERFLOW
 
-        if UCHAR_MAX-self.header.tags_count <= add_tags:
-            return False
+        if UCHAR_MAX-self.header.tags_count < add_tags:
+            return ERR_DATA_OVERFLOW
+
+        if (USHRT_MAX - self.header.last_position) < new_rec_size:
+            return ERR_DATA_OVERFLOW
 
         if self.header.tags_count+add_tags > self.header.tags_capacity:
-            return False
+            return ERR_RESIZE_REQUIRED
 
-        if (USHRT_MAX - self.header.last_position) <= new_rec_size:
-            return False
-
-        return self.header.last_position + new_rec_size <= self.header.data_size
+        if self.header.last_position + new_rec_size <= self.header.data_size:
+            return 1
+        else:
+            return ERR_RESIZE_REQUIRED
 
     @staticmethod
     cdef FIXMsgStruct * resize(FIXMsgStruct * self, uint8_t add_tags, uint16_t add_values_size) nogil:
@@ -403,8 +413,13 @@ cdef class FIXMsg:
         cdef int rc = 0
         cdef uint16_t last_position = self.header.last_position
 
-        if FIXMsg.has_capacity(self, 1, value_size + sizeof(FIXRec)) == 0:
-            return ERR_DATA_RESIZE_REQUIRED
+        rc = FIXMsg.has_capacity(self, 1, value_size + sizeof(FIXRec))
+        if rc <= 0:
+            cyassert(rc != 0)  # 0 is returned when add_tag or value_size == 0
+            if rc == ERR_DATA_OVERFLOW:
+                # Critical error, not fixable, set error status
+                self.header.last_position = USHRT_MAX
+            return rc
 
         cdef FIXRec * rec
 
@@ -416,7 +431,7 @@ cdef class FIXMsg:
                 # Duplicate or error
                 return ERR_FIX_DUPLICATE_TAG
             elif _data_offset_idx == USHRT_MAX-3:  # TAG_NEED_RESIZE
-                return ERR_TAG_RESIZE_REQUIRED
+                return ERR_RESIZE_REQUIRED
             else:
                 # Other generic error, typically oveflow
                 return ERR_DATA_OVERFLOW
@@ -464,15 +479,17 @@ cdef class FIXMsg:
         :param value_type: the same char value as given in set method
         :return: positive on success, negative on error, zero if not found
         """
-        if self.open_group != NULL:
-            return ERR_GROUP_NOT_FINISHED
-        if value_type == b'\x07' or value_type == b'\x00':
-            return ERR_FIX_NOT_ALLOWED
-
         cdef FIXRec * rec
         # Fill default return values
         value[0] = NULL
         value_size[0] = 0
+
+        if self.open_group != NULL:
+            return ERR_GROUP_NOT_FINISHED
+        if value_type == b'\x07' or value_type == b'\x00':
+            return ERR_FIX_NOT_ALLOWED
+        if self.header.last_position == USHRT_MAX:
+            return ERR_DATA_OVERFLOW
 
         if tag == 0:
             return ERR_FIX_ZERO_TAG
