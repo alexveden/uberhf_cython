@@ -19,8 +19,11 @@ cdef long datetime_nsnow() nogil:
     :return: timestamp in nanoseconds (10**-9 sec)
     """
     cdef timespec spec
-    cyassert(clock_gettime(CLOCK_REALTIME, &spec) == 0)
-    return spec.tv_sec * 1000000000 + spec.tv_nsec
+    cdef int rc = clock_gettime(CLOCK_REALTIME, &spec)
+    cyassert(rc == 0)
+    cyassert(spec.tv_sec > 0)
+    cyassert(spec.tv_nsec > 0)
+    return spec.tv_sec  * 1000000000 + spec.tv_nsec
 
 cdef long datetime_from_spec(timespec *spec) nogil:
     """
@@ -37,7 +40,10 @@ cdef long timer_nsnow() nogil:
     :return: timestamp in nanoseconds (10**-9 sec)
     """
     cdef timespec spec
-    cyassert(clock_gettime(CLOCK_MONOTONIC, &spec) == 0)
+    cdef int rc = clock_gettime(CLOCK_MONOTONIC, &spec)
+    cyassert(rc == 0)
+    cyassert(sizeof(long) == 8)
+
     return spec.tv_sec * 1000000000 + spec.tv_nsec
 
 cdef double timedelta_ns(long dt_end, long dt_begin, double timedelta_units) nogil:
@@ -79,6 +85,9 @@ cdef int random_int(int lo, int hi) nogil:
     if hi == lo:
         return lo
 
+    if hi < lo:
+        return 0
+
     # On linux rand() function the same as random()
     return rand() % (hi - lo) + lo
 
@@ -102,10 +111,13 @@ cdef unsigned int gen_lifetime_id(int module_id) nogil:
     :param module_id: unique module ID number (between 1 and 40)
     :return: Integer in format mmHHMMSSrr
     """
-    cyassert(module_id > 0 and module_id <= 40)
+    if module_id > 0 and module_id <= 40:
+        return -1
 
     cdef timespec spec
-    cyassert(clock_gettime(CLOCK_REALTIME, &spec) == 0)
+    cdef int rc = clock_gettime(CLOCK_REALTIME, &spec)
+    if rc != 0:
+        return -1
 
     random_seed(spec.tv_nsec)
 

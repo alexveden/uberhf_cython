@@ -108,6 +108,8 @@ class CyUtilsTestCase(unittest.TestCase):
         clock_gettime(CLOCK_REALTIME, &spec)
         cdef long spec_now = datetime_from_spec(&spec)
 
+        assert spec_now > 0
+        assert now > 0
         self.assertAlmostEqual(now, spec_now, delta=10000)
 
     def test_gen_lifetime_id(self):
