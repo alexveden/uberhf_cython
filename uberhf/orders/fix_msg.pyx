@@ -248,17 +248,16 @@ cdef class FIXMsg:
         """
         Checks is FIXMsgStruct * self has a capacity for addint extra `add_tags` and `new_rec_size` of data
         :param self: 
-        :param add_tags: number of tags adding 
+        :param add_tags: number of tags adding (allowed to be 0, for example group members data)
         :param new_rec_size: number of bytes (including sizeof(FIXRec)) 
         :return: 1 on success, <= 0 on error
         """
-        if add_tags == 0 or new_rec_size == 0:
-            return 0
+        cyassert(new_rec_size > 0)
 
         if self.header.tags_count == UCHAR_MAX:
             return ERR_DATA_OVERFLOW
 
-        if UCHAR_MAX-self.header.tags_count < add_tags:
+        if add_tags > 0 and UCHAR_MAX-self.header.tags_count < add_tags:
             return ERR_DATA_OVERFLOW
 
         if (USHRT_MAX - self.header.last_position) < new_rec_size:
@@ -354,7 +353,7 @@ cdef class FIXMsg:
 
         if self.open_group != NULL:
             cyassert(0)  # TODO: fix this later
-            # self.open_group = <GroupRec *> (self.values + open_group_offset)
+            # self.open_group = <FIXGroupRec *> (self.values + open_group_offset)
             # cyassert(self.open_group.fix_rec.tag == open_group_tag)
             # cyassert(self.open_group.fix_rec.value_type == b'\x07')
 
@@ -387,6 +386,8 @@ cdef class FIXMsg:
                            types b'\x07' and '\x00' are not allowed, and reserved!
         :return: negative on error, positive on success
         """
+        if self.header.is_read_only == 1:
+            return ERR_DATA_READ_ONLY
         if self.open_group != NULL:
             self.header.tag_errors += 1
             return ERR_GROUP_NOT_FINISHED
@@ -522,3 +523,443 @@ cdef class FIXMsg:
         value[0] = self.values + data_offset + sizeof(FIXRec)
         return 1
 
+    @staticmethod
+    cdef int group_start(FIXMsgStruct * self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil:
+        """
+        Initializes fix group
+
+        Example:
+            m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+            cdef uint16_t n_elements = 5
+
+            cdef int i = 123
+            cdef double f = 8907.889
+            cdef char c = b'V'
+            cdef char * s = b'my fancy string, it may be too long!'
+
+            assert m.group_start(100, n_elements, 4,  [10, 11, 12, 13]) == 1
+            for k in range(n_elements):
+                # start_tag is mandatory! TAG ORDER MATTERS!
+                m.group_add_tag(100, 10, &i, sizeof(int), b'i')
+                m.group_add_tag(100, 11, &f, sizeof(double), b'f')
+                #   Other tags may be omitted or optional
+                #   m.group_add_tag(100, 12, &c, sizeof(char), b'c')
+                m.group_add_tag(100, 13, s, strlen(s) + 1, b's')
+            assert m.group_finish(100) == 1
+
+            assert m.group_count(100) == 5
+
+
+        :param group_tag: unique group tag 
+        :param grp_n_elements: number of elements in a grout
+        :param n_tags: length of `tags` array, min 1, max 126
+        :param tags: collection of child tags (must be unique, order matters!)
+        :return: positive on success, negative on error
+        """
+        if self.header.is_read_only == 1:
+            return ERR_DATA_READ_ONLY
+        if self.open_group != NULL:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_FINISHED
+        if grp_n_elements < 1:
+            self.header.tag_errors += 1
+            return ERR_GROUP_EMPTY
+        if n_tags < 1:
+            self.header.tag_errors += 1
+            return ERR_GROUP_EMPTY
+        if n_tags >= 127:
+            self.header.tag_errors += 1
+            return ERR_GROUP_TOO_MANY
+        if group_tag == 0:
+            self.header.tag_errors += 1
+            return ERR_FIX_ZERO_TAG
+
+        cyassert(tags != NULL)
+
+        cdef int rc = 0
+        cdef int base_len = sizeof(uint16_t) * n_tags + sizeof(uint16_t) * grp_n_elements
+
+        cdef uint16_t last_position = self.header.last_position
+
+        rc = FIXMsg.has_capacity(self, 1, base_len + sizeof(FIXGroupRec))
+        if rc <= 0:
+            if rc == ERR_DATA_OVERFLOW:
+                # Invalidate message
+                self.header.last_position = USHRT_MAX
+            return rc
+
+        cdef FIXGroupRec * rec
+        if FIXMsg._set_tag_offset(self, group_tag, last_position) >= USHRT_MAX - 10:
+            self.header.tag_errors += 1
+            return ERR_FIX_DUPLICATE_TAG
+
+        # New value added successfully
+        rec = <FIXGroupRec *> (self.values + last_position)
+
+        # Group data alignment
+        # struct FIXGroupRec
+        #     FIXRec fix_rec
+        #         uint16_t tag
+        #         char value_type
+        #         uint16_t value_len
+        #     uint16_t grp_n_elements
+        #     uint16_t n_tags
+        #     uint16_t * group_tags_values         # List of all tags in a group (must be n_tags length)
+        #         uint16_t *tag1 (is mandatory!)
+        #         ...
+        #         uint16_t *tag_n (len n_tags)
+        #     uint16_t * group_elements_offsets     # Used for fast group search by index
+        #         uint16_t *el_1 offset
+        #         ...
+        #         uint16_t *el_n offset (len grp_n_elements)
+
+        rec.fix_rec.tag = group_tag
+        rec.fix_rec.value_type = b'\x07'  # Special type reserved for groups
+        # This is a base length extra to sizeof(FIXRec)
+        rec.fix_rec.value_len = base_len
+        rec.grp_n_elements = grp_n_elements
+        rec.n_tags = n_tags
+        rec.current_element = 0  # First iteration will make it 0
+        rec.current_tag_len = -1
+        self.open_group = rec
+
+        cdef uint16_t i, j
+        cdef uint16_t *fix_data_tags = <uint16_t *> (self.values + last_position + sizeof(FIXGroupRec))
+
+        for i in range(n_tags):
+            cyassert(n_tags < 127)
+            if tags[i] == 0:
+                self.header.tag_errors += 1
+                return ERR_FIX_ZERO_TAG
+            # Quick check for duplicates
+            if tags[i] == group_tag:
+                self.header.tag_errors += 1
+                return ERR_GROUP_DUPLICATE_TAG
+
+            for j in range(n_tags):
+                if i != j and tags[i] == tags[j]:
+                    self.header.tag_errors += 1
+                    return ERR_GROUP_DUPLICATE_TAG
+
+            if FIXMsg._get_tag_offset(self, tags[i]) != USHRT_MAX - 1:  # DEF RESULT_NOT_FOUND = 	65534 # USHRT_MAX-1
+                # Group tags must be unique across global tags!
+                self.header.tag_errors += 1
+                return ERR_GROUP_DUPLICATE_TAG
+
+            fix_data_tags[i] = tags[i]
+
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (self.values + last_position + sizeof(FIXGroupRec) + n_tags * sizeof(uint16_t))
+
+        for i in range(grp_n_elements):
+            fix_data_el_offsets[i] = USHRT_MAX
+
+        self.header.last_position += sizeof(FIXGroupRec) + n_tags * sizeof(uint16_t) + grp_n_elements * sizeof(uint16_t)
+        return 1
+    
+    @staticmethod
+    cdef int group_add_tag(FIXMsgStruct * self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        """
+        Adds new child tag into a group
+
+        Notes:
+            - This function requires previous group_start() call
+            - `tag` must present in group_start(..., *tags) call
+            - always add `tag[0]` (start tag) in group_start(..., *tags[0]) call
+            - child tags must be unique across FIX messages (but allowed duplication within the same group_tag)
+            - you must add the count of start_tags == value of group_start(..., `grp_n_elements`,...)
+            - tag order matters and must be the same as in FIX specification and group_start(..., *tags) order
+
+        :param group_tag: parent group tag 
+        :param tag: child group tag
+        :param value: child tag value
+        :param value_size: child tag size
+        :param value_type: child tag type
+        :return: positive on success, zero or negative on error 
+        """
+        if self.header.is_read_only == 1:
+            return ERR_DATA_READ_ONLY
+        if self.open_group == NULL:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_STARTED
+        if group_tag == 0:
+            self.header.tag_errors += 1
+            return ERR_FIX_ZERO_TAG
+        if tag == 0:
+            self.header.tag_errors += 1
+            return ERR_FIX_ZERO_TAG
+        if value_type == b'\x07' or value_type == b'\x00':
+            self.header.tag_errors += 1
+            return ERR_FIX_NOT_ALLOWED
+        if value_size == 0:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        if value_size > 1024:
+            self.header.tag_errors += 1
+            return ERR_FIX_VALUE_TOOLONG
+
+        if group_tag != self.open_group.fix_rec.tag:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_MATCH
+
+        cdef int rc = FIXMsg.has_capacity(self, 0, value_size + sizeof(FIXRec))
+        if rc <= 0:
+            if rc == ERR_DATA_OVERFLOW:
+                self.header.last_position = USHRT_MAX
+            return rc
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> self.open_group + sizeof(FIXGroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> self.open_group + sizeof(FIXGroupRec) + self.open_group.n_tags * sizeof(uint16_t))
+        cdef uint16_t last_position = self.header.last_position
+        cdef int tag_count = 0
+        cdef int k = 0
+        cdef FIXRec * rec
+        cdef int tag_offset = 0
+
+        if self.open_group.current_element == 0 and self.open_group.current_tag_len == -1:
+            # Just initializing
+            if tag != fix_data_tags[0]:
+                self.header.tag_errors += 1
+                return ERR_GROUP_START_TAG_EXPECTED
+
+        if tag == fix_data_tags[0]:
+            # Starting tag, add next element
+            if self.open_group.current_tag_len != -1:
+                self.open_group.current_element += 1
+
+            self.open_group.current_tag_len = 0
+
+            if self.open_group.current_element >= <int> self.open_group.grp_n_elements:
+                self.header.tag_errors += 1
+                return ERR_GROUP_EL_OVERFLOW
+
+            fix_data_el_offsets[self.open_group.current_element] = last_position
+        else:
+            for i in range(self.open_group.n_tags):
+                if tag == fix_data_tags[i]:
+                    tag_count += 1
+                    tag_offset = 0
+                    k = 0
+                    while k < self.open_group.current_tag_len:
+                        rec = <FIXRec *> (self.values + fix_data_el_offsets[self.open_group.current_element] + tag_offset)
+                        for j in range(i, self.open_group.n_tags):
+                            if rec.tag == fix_data_tags[j]:
+                                if i == j:
+                                    self.header.tag_errors += 1
+                                    return ERR_GROUP_DUPLICATE_TAG
+                                else:
+                                    self.header.tag_errors += 1
+                                    return ERR_GROUP_TAG_WRONG_ORDER
+
+                        tag_offset += sizeof(FIXRec) + rec.value_len
+                        k += 1
+                    break
+            if tag_count == 0:
+                self.header.tag_errors += 1
+                return ERR_GROUP_TAG_NOT_INGROUP
+
+        rec = <FIXRec *> (self.values + last_position)
+        rec.tag = tag
+        rec.value_type = value_type
+        rec.value_len = value_size
+
+        self.header.last_position += sizeof(FIXRec) + value_size
+        self.open_group.fix_rec.value_len += sizeof(FIXRec) + value_size
+        self.open_group.current_tag_len += 1
+
+        cdef char * str_dest = NULL
+        if value_type == b's':
+            str_dest = <char *> (self.values + last_position + sizeof(FIXRec))
+            rc = strlcpy(str_dest, <char *> value, value_size)
+            if rc != value_size - 1:
+                # Highly likely - argument (char* value) passed as (&value)
+                str_dest[0] = b'\0'  # Make this string empty
+                self.header.tag_errors += 1
+                return ERR_UNEXPECTED_TYPE_SIZE
+        else:
+            memcpy(self.values + last_position + sizeof(FIXRec), <char *> value, value_size)
+
+        return 1
+    
+    @staticmethod
+    cdef int group_get(FIXMsgStruct * self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil:
+        """
+        Get group.element.tag value
+
+        :param group_tag: finished group tag
+        :param el_idx:  element index (must be >= 0 and < grp_n_elements)
+        :param tag: child tag in the group
+        :param value: pointer to void* buffer of the tag value
+        :param value_size:  tag value size
+        :param value_type: tag value type (must match to group_add_tag(..., `value_type`))        
+        :return: 1 if found, 0 if not found, negative on error
+        """
+
+        # Reset pointers before handling any errors
+        value[0] = NULL
+        value_size[0] = 0
+        if group_tag == 0:
+            return ERR_FIX_ZERO_TAG
+        if tag == 0:
+            return ERR_FIX_ZERO_TAG
+        if group_tag == 35:
+            return ERR_FIX_NOT_ALLOWED
+
+        if self.open_group != NULL:
+            return ERR_GROUP_NOT_FINISHED
+
+        if self.header.last_position == USHRT_MAX:
+            return ERR_DATA_OVERFLOW
+
+        cdef FIXGroupRec * rec
+
+        cdef uint16_t data_offset = FIXMsg._get_tag_offset(self, group_tag)
+        if data_offset >= USHRT_MAX - 10:
+            if data_offset == USHRT_MAX - 1:
+                # Tag not found
+                return ERR_NOT_FOUND
+            if data_offset == USHRT_MAX - 2:
+                # Possibly duplicate tag
+                return ERR_FIX_DUPLICATE_TAG
+            # Likely tag number is too high, other generic error, we must stop anyway
+            return ERR_DATA_OVERFLOW
+
+        # New value added successfully
+        rec = <FIXGroupRec *> (self.values + data_offset)
+
+        if rec.fix_rec.value_type != b'\x07':
+            # Type mismatch
+            self.header.tag_errors += 1
+            return ERR_GROUP_CORRUPTED
+
+        cyassert(rec.n_tags > 0)
+        cyassert(rec.grp_n_elements > 0)
+
+        if el_idx >= rec.grp_n_elements:
+            return ERR_GROUP_EL_OVERFLOW
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> rec + sizeof(FIXGroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> rec + sizeof(FIXGroupRec) + rec.n_tags * sizeof(uint16_t))
+
+        cdef bint tag_in_group = False
+        for i in range(rec.n_tags):
+            if tag == fix_data_tags[i]:
+                tag_in_group = True
+                break
+        if not tag_in_group:
+            return ERR_GROUP_TAG_NOT_INGROUP
+
+        cdef uint16_t el_offset = fix_data_el_offsets[el_idx]
+        cdef FIXRec * trec = <FIXRec *> (self.values + el_offset)
+        cdef uint16_t tag_offset = 0
+
+        cyassert(el_offset != USHRT_MAX)
+        cyassert(trec != NULL)
+
+        while True:
+            if el_offset + tag_offset > self.header.data_size:
+                self.header.tag_errors += 1
+                return ERR_GROUP_CORRUPTED
+
+            trec = <FIXRec *> (self.values + el_offset + tag_offset)
+
+            if trec.tag == 0:
+                return ERR_NOT_FOUND
+
+            if tag_offset != 0:
+                if trec.tag == fix_data_tags[0]:
+                    # Next start tag
+                    return ERR_NOT_FOUND
+            else:
+                if trec.tag != fix_data_tags[0]:
+                    self.header.tag_errors += 1
+                    # Expected to be a start tag
+                    return ERR_GROUP_CORRUPTED
+
+            if trec.tag == tag:
+                break
+            else:
+                tag_offset += (trec.value_len + sizeof(FIXRec))
+
+        if trec.value_type != value_type:
+            return ERR_FIX_TYPE_MISMATCH
+
+        value_size[0] = trec.value_len
+        value[0] = (<void *> trec + sizeof(FIXRec))
+        return 1
+    
+    @staticmethod
+    cdef int group_finish(FIXMsgStruct * self, uint16_t group_tag) nogil:
+        """
+        Finish tag group, must be called after 
+
+        :param group_tag: 
+        :return: 
+        """
+        if self.header.is_read_only == 1:
+            return ERR_DATA_READ_ONLY
+        if self.open_group == NULL:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_STARTED
+        if group_tag != self.open_group.fix_rec.tag:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_MATCH
+        if self.open_group.current_element != self.open_group.grp_n_elements - 1:
+            self.header.tag_errors += 1
+            return ERR_GROUP_NOT_COMPLETED
+        cdef uint16_t last_position = self.header.last_position
+
+        cdef int rc = FIXMsg.has_capacity(self, 0, sizeof(FIXRec))
+        if rc <= 0:
+            if rc == ERR_DATA_OVERFLOW:
+                self.header.last_position = USHRT_MAX
+            self.header.tag_errors += 1
+            return rc
+
+        rec = <FIXRec *> (self.values + last_position)
+
+        rec.tag = 0
+        rec.value_type = b'\0'
+        rec.value_len = 0
+
+        self.header.last_position += sizeof(FIXRec)
+        self.open_group.fix_rec.value_len += sizeof(FIXRec)
+        self.open_group = NULL
+
+        return 1
+    
+    @staticmethod
+    cdef int group_count(FIXMsgStruct * self, uint16_t group_tag) nogil:
+        """
+        Gets number of element of `group_tag`, or zero if not found
+
+        :param group_tag: some valid group tag
+        :return: positive count if group exists, 0 if not exists, negative on error
+        """
+        if self.header.last_position == USHRT_MAX:
+            return ERR_DATA_OVERFLOW
+        if group_tag == 0:
+            return ERR_FIX_ZERO_TAG
+        if group_tag == 35:
+            return ERR_FIX_NOT_ALLOWED
+        if self.open_group != NULL:
+            return ERR_GROUP_NOT_FINISHED
+
+        cdef uint16_t data_offset = FIXMsg._get_tag_offset(self, group_tag)
+        if data_offset >= USHRT_MAX - 10:
+            if data_offset == USHRT_MAX - 1:
+                # Tag not found
+                return ERR_NOT_FOUND
+            if data_offset == USHRT_MAX - 2:
+                # Possibly duplicate tag
+                return ERR_FIX_DUPLICATE_TAG
+            # Likely tag number is too high, other generic error, we must stop anyway
+            return ERR_DATA_OVERFLOW
+
+        # New value added successfully
+        cdef FIXGroupRec * rec = <FIXGroupRec *> (self.values + data_offset)
+
+        if rec.fix_rec.value_type != b'\x07':
+            self.header.tag_errors += 1
+            return ERR_GROUP_CORRUPTED
+
+        return rec.grp_n_elements

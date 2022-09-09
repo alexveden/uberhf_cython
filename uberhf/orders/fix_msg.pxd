@@ -106,3 +106,14 @@ cdef class FIXMsg:
 
     @staticmethod
     cdef FIXMsgStruct * resize(FIXMsgStruct * self, uint8_t add_tags, uint16_t add_values_size) nogil
+
+    @staticmethod
+    cdef int group_start(FIXMsgStruct * self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil
+    @staticmethod
+    cdef int group_add_tag(FIXMsgStruct * self, uint16_t group_tag, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil
+    @staticmethod
+    cdef int group_finish(FIXMsgStruct * self, uint16_t group_tag) nogil
+    @staticmethod
+    cdef int group_get(FIXMsgStruct * self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
+    @staticmethod
+    cdef int group_count(FIXMsgStruct * self, uint16_t group_tag) nogil

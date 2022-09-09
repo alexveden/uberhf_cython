@@ -519,775 +519,741 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         free(val)
         FIXMsg.destroy(m)
-    #
-    # def test_set_overflow_int_with_resize(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
-    #     assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
-    #
-    #     cdef int i
-    #     cdef void* value
-    #     cdef uint16_t value_size
-    #     prev_last_position = 0
-    #
-    #     # Exclude zero tag error and tag 35 error
-    #     max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) + 2
-    #
-    #     for i in range(0, USHRT_MAX):
-    #         if i == 0:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
-    #         elif i == 35:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -4, f'{i}') # ERR_FIX_TAG35_NOTALLOWED
-    #         else:
-    #             if i < max_records:
-    #                 self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), 1, f'{i}')
-    #                 self.assertEqual(FIXMsg.get(m, i, &value, &value_size, b'i'), 1, f'{i}')
-    #                 assert (<int *> value)[0] == i, i
-    #                 assert value_size == sizeof(int)
-    #                 assert m.header.last_position > prev_last_position, i
-    #                 self.assertEqual(int(m.header.last_position) - prev_last_position, sizeof(FIXRec) + sizeof(int))
-    #             else:
-    #                 self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -6, f'{i}')  # ERR_DATA_OVERFLOW
-    #
-    #             prev_last_position = m.header.last_position
-    #
-    #
-    # def test_group_start(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
-    #     assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
-    #
-    #     cdef int i
-    #     cdef void* value
-    #     cdef uint16_t value_size
-    #
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     assert g != NULL
-    #
-    #     assert g.fix_rec.tag == 10
-    #     assert g.fix_rec.value_type == b'\x07'
-    #     assert g.fix_rec.value_len == sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
-    #     assert g.grp_n_elements == 2
-    #     assert g.current_element == 0
-    #     assert g.current_tag_len == -1
-    #     assert g.n_tags == 3
-    #
-    #     cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec))
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec) + m.open_group.n_tags * sizeof(uint16_t))
-    #
-    #     assert fix_data_tags[0] == 1
-    #     assert fix_data_tags[1] == 3
-    #     assert fix_data_tags[2] == 4
-    #
-    #     assert fix_data_el_offsets[0] == USHRT_MAX
-    #     assert fix_data_el_offsets[1] == USHRT_MAX
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    #
-    # def test_group_add_tag(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 2000
-    #
-    #     cdef int i
-    #     cdef void* value
-    #     cdef uint16_t value_size
-    #
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     assert g != NULL
-    #
-    #     cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec))
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec) + m.open_group.n_tags * sizeof(uint16_t))
-    #
-    #     cdef int val = 0
-    #     cdef int base_len = sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
-    #
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef FIXRec * rec
-    #     n_tags_added = 0
-    #     for j in range(2):
-    #         for i in [1, 3, 4]:
-    #             val = (j+1) * 100 + i
-    #             self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
-    #             rec = <FIXRec*>(m.values + (m.header.last_position - sizeof(FIXRec) - sizeof(int)))
-    #             val_data = (m.values + (m.header.last_position - sizeof(int)))
-    #             n_tags_added += 1
-    #             assert rec.tag == i
-    #             assert rec.value_type == b'i'
-    #             assert rec.value_len == sizeof(int)
-    #             assert g.fix_rec.value_len == n_tags_added * (sizeof(FIXRec) + sizeof(int)) + base_len
-    #             self.assertEqual((<int*>val_data)[0], val)
-    #
-    #             #self.assertEqual(FIXMsg.group_get(m, 10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
-    #             #assert (<int *> val_data)[0] == val
-    #         #
-    #         if j == 0:
-    #             assert fix_data_el_offsets[j] == m.header.last_position - 3 * (sizeof(FIXRec) + sizeof(int))
-    #         else:
-    #             assert fix_data_el_offsets[j]-fix_data_el_offsets[j-1] == 3 *  (sizeof(FIXRec) + sizeof(int))
-    #
-    #         # First tag always must be in place
-    #         rec = <FIXRec *> (m.values + fix_data_el_offsets[j])
-    #         assert rec.tag == 1
-    #
-    #     self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + base_len)
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0 # Group not finished
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), 1)
-    #     assert FIXMsg.is_valid(m, ) == 1 # All good
-    #
-    #     self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + sizeof(FIXRec) + base_len)
-    #
-    #     rec = <FIXRec *>(m.values + (m.header.last_position - sizeof(FIXRec)))
-    #     assert rec.tag == 0
-    #     assert rec.value_len == 0
-    #     assert rec.value_type == b'\0'
-    #     g = <GroupRec *>(m.values + m.header.last_position - g.fix_rec.value_len - sizeof(GroupRec))
-    #     assert g.fix_rec.tag == 10
-    #
-    #     assert m.open_group == NULL
-    #     assert g != NULL
-    #
-    #     for j in range(2):
-    #         for i in [1, 3, 4]:
-    #             val = (j+1) * 100 + i
-    #             self.assertEqual(FIXMsg.group_get(m, 10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
-    #             assert (<int*>val_data)[0] == val
-    #
-    # def test_group_finish(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 2000
-    #
-    #     cdef int i
-    #     cdef void* value
-    #     cdef uint16_t value_size
-    #
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), -17) # ERR_GROUP_NOT_COMPLETED
-    #
-    #     cdef GroupRec * g = m.open_group
-    #     assert g != NULL
-    #
-    #     cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec))
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(GroupRec) + m.open_group.n_tags * sizeof(uint16_t))
-    #
-    #     cdef int val = 0
-    #     cdef int base_len = sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
-    #
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef FIXRec * rec
-    #     n_tags_added = 0
-    #     for j in range(2):
-    #         for i in [1, 3, 4]:
-    #             val = (j+1) * 100 + i
-    #             self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
-    #
-    #     self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + base_len)
-    #     last_position = m.header.last_position
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), 1)
-    #
-    #     # Make sure that last position and group size increased
-    #     self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + sizeof(FIXRec) + base_len)
-    #     assert m.header.last_position == last_position + sizeof(FIXRec)
-    #
-    #     rec = <FIXRec *> (m.values + (m.header.last_position - sizeof(FIXRec)))
-    #     assert rec.tag == 0
-    #     assert rec.value_len == 0
-    #     assert rec.value_type == b'\0'
-    #     assert m.open_group == NULL
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1, f'i={i}')
-    #
-    # def test_group_start_errors__already_started(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__already_started(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__empty_group(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 0, 3, [1, 3, 4]), -9) #ERR_GROUP_EMPTY
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 0, [1, 3, 4]), -9)  #ERR_GROUP_EMPTY
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__too_many_tags(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 127, [1, 3, 4]), -13) #ERR_GROUP_TOO_MANY
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__duplicate_tag_global_fixgrp(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     cdef int a = 1234
-    #     FIXMsg.set(m, 10, &a, sizeof(int), b'i')
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -1) #ERR_FIX_DUPLICATE_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__duplicate_tag_global(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     cdef int a = 1234
-    #     FIXMsg.set(m, 3, &a, sizeof(int), b'i')
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__duplicate_tag_group(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     # Duplicate between tag in members and group's tag
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [10, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__duplicate_tag_members(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     # Duplicates inside members
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [3, 3, 4]), -10)  #ERR_GROUP_DUPLICATE_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_start_errors__tag_zero(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     # Duplicates inside members
-    #     self.assertEqual(FIXMsg.group_start(m, 0, 1, 3, [1, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
-    #     self.assertEqual(FIXMsg.group_start(m, 1, 1, 3, [0, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_errors__not_started(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -11) # ERR_GROUP_NOT_STARTED
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    #
-    # def test_group_add_tag_errors__grp_not_match(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 11, 1, &a, sizeof(int), b'i'), -12) # ERR_GROUP_NOT_MATCH
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_errors__start_tag_expected(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -14) # ERR_GROUP_START_TAG_EXPECTED
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_errors__elements_overflow(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -15) # ERR_GROUP_EL_OVERFLOW
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    #
-    # def test_group_add_tag_errors__tag_not_in_group(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 7, &a, sizeof(int), b'i'), -16) # ERR_GROUP_TAG_NOT_INGROUP
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_errors__tag_wrong_order_and_duplicates(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), -10)# ERR_GROUP_DUPLICATE_TAG
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_errors__tag_wrong_order_and_duplicates_2nd_grp(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), -10)  # ERR_GROUP_DUPLICATE_TAG
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_zero(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 0, &a, sizeof(int), b'i'), -5) # ERR_FIX_ZERO_TAG
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 0, 1, &a, sizeof(int), b'i'), -5)  # ERR_FIX_ZERO_TAG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_too_long(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 1025, b'i'), -3) # ERR_FIX_VALUE_TOOLONG
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_size_zero(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 0, b'i'), -20)# ERR_UNEXPECTED_TYPE_SIZE
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_add_tag_string_length_mismatch(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     cdef void *value
-    #     cdef uint16_t value_size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef char * s = b'12345'
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &s, strlen(s), b's'), -20)# ERR_UNEXPECTED_TYPE_SIZE
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    #
-    # def test_group_add_tag_type_not_allowed(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'\0'), -4) # ERR_FIX_NOT_ALLOWED
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'\x07'), -4)  # ERR_FIX_NOT_ALLOWED
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_finish_errors(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void *value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), -11) #ERR_GROUP_NOT_STARTED
-    #
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     self.assertEqual(FIXMsg.group_finish(m, 11), -12)  #ERR_GROUP_NOT_MATCH
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), -17)  #ERR_GROUP_NOT_COMPLETED
-    #
-    #     cdef int a = 1234
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
-    #
-    #     #
-    #     # Get / set also rejected when the group is open
-    #     #
-    #     self.assertEqual(FIXMsg.set(m, 123, &a, sizeof(int), b'i'), -8 ) # ERR_GROUP_NOT_FINISHED
-    #     self.assertEqual(FIXMsg.get(m, 123, &value, &size, b'i'), -8)  # ERR_GROUP_NOT_FINISHED
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 1, &value, &size, b'i'), -8)
-    #     self.assertEqual(FIXMsg.group_count(m, 10), -8)
-    #
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), -17)  #ERR_GROUP_NOT_COMPLETED
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_finish(m, 10), 1)  # Success
-    #     assert m.open_group == NULL
-    #
-    #     assert m.header.tag_errors > 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_get_errors__not_finished(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     for j in range(2):
-    #         for i in [1, 3, 4]:
-    #             val = (j+1) * 100 + i
-    #             self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
-    #
-    #         self.assertEqual(FIXMsg.group_get(m, 10, j, 1, &val_data, &val_size, b'i'), -8) # ERR_GROUP_NOT_FINISHED
-    #         self.assertEqual(FIXMsg.group_count(m, 10), -8) # ERR_GROUP_NOT_FINISHED
-    #     assert m.header.tag_errors == 0
-    #     assert FIXMsg.is_valid(m, ) == 0  # Had errors
-    #
-    # def test_group_get_errors__not_found(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 101, 0, 1, &val_data, &val_size, b'i'), 0) # ERR_NOT_FOUND
-    #
-    #     self.assertEqual(FIXMsg.group_count(m, 101), 0)  # ERR_NOT_FOUND
-    #
-    # def test_group_get_errors__duplicate_tag_or_overflow(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     # All good
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1)
-    #
-    #     # Oops tag dupe
-    #     assert FIXMsg.set(m, 10, &val, sizeof(int), b'i') == -1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -1) # ERR_FIX_DUPLICATE_TAG
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, USHRT_MAX-10, 0, 1, &val_data, &val_size, b'i'), -6)  # ERR_DATA_OVERFLOW
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    # def test_group_get_errors__tag_zero_or_not_allowed(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 0, 1, 1, &val_data, &val_size, b'i'), -5) # ERR_FIX_ZERO_TAG
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 0, &val_data, &val_size, b'i'), -5)  # ERR_FIX_ZERO_TAG
-    #     self.assertEqual(FIXMsg.group_get(m, 35, 1, 1, &val_data, &val_size, b'i'), -4)  # ERR_FIX_NOT_ALLOWED
-    #
-    #     self.assertEqual(FIXMsg.group_count(m, 0), -5)  # ERR_FIX_ZERO_TAG
-    #     self.assertEqual(FIXMsg.group_count(m, 35), -4)  # ERR_FIX_NOT_ALLOWED
-    #
-    #     # Read operation doesn't trigger msg corruption!
-    #     assert FIXMsg.is_valid(m, ) == 1
-    #
-    #
-    # def test_group_get_errors__fix_rec_type_mismach(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     # Corrupting fix rec type!
-    #     g.fix_rec.value_type = b'w'
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
-    #     self.assertEqual(FIXMsg.group_count(m, 10), -19)  # ERR_GROUP_CORRUPTED
-    #
-    #     # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    #
-    # def test_group_get_errors__el_out_of_bounds(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 2, 1, &val_data, &val_size, b'i'), -15)  # ERR_GROUP_EL_OVERFLOW
-    #
-    # def test_group_get_errors__tag_type_mismatch(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'c'), -2)  # ERR_FIX_TYPE_MISMATCH
-    #
-    # def test_group_get_errors__tag_not_in_group(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void* val_data = NULL
-    #     cdef uint16_t val_size = 0
-    #     cdef int val = 0
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 5, &val_data, &val_size, b'i'), -16)  # ERR_GROUP_TAG_NOT_INGROUP
-    #
-    # def test_group_get_errors__tag_not_found(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef int val = 0
-    #     cdef void* val_data = &val
-    #     cdef uint16_t val_size = 234
-    #
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 3, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
-    #
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
-    #
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(GroupRec) + g.n_tags * sizeof(uint16_t))
-    #     for i in range(3):
-    #         assert fix_data_el_offsets[i] < 1000
-    #
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 2, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 3, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 4, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 1, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 2, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 3, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 1, 4, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 2, 1, &val_data, &val_size, b'i'), 1)  # OK
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 2, 2, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 2, 3, &val_data, &val_size, b'i'), 1)  # OK
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 2, 4, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
-    #
-    #     assert val_data == NULL
-    #     assert val_size == 0
-    #
-    # def test_group_get_errors__corrupted_offset(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef int val = 0
-    #     cdef void* val_data = &val
-    #     cdef uint16_t val_size = 234
-    #
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #     assert FIXMsg.is_valid(m, ) == 1
-    #
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(GroupRec) + g.n_tags * sizeof(uint16_t))
-    #     fix_data_el_offsets[0] = USHRT_MAX - 1
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
-    #     # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    # def test_group_get_errors__corrupted_start_tag(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef int val = 0
-    #     cdef void* val_data = &val
-    #     cdef uint16_t val_size = 234
-    #
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
-    #     cdef GroupRec * g = m.open_group
-    #     val = 123
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
-    #     self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
-    #     assert FIXMsg.group_finish(m, 10) == 1
-    #     assert FIXMsg.is_valid(m, ) == 1
-    #
-    #     cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(GroupRec) + g.n_tags * sizeof(uint16_t))
-    #
-    #     cdef FIXRec *trec = <FIXRec *> (m.values + fix_data_el_offsets[0])
-    #     trec.tag = 5
-    #
-    #     self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    #
+
+    def test_group_start(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20, 20)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
+
+        cdef int i
+        cdef void* value
+        cdef uint16_t value_size
+
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        assert g != NULL
+
+        assert g.fix_rec.tag == 10
+        assert g.fix_rec.value_type == b'\x07'
+        assert g.fix_rec.value_len == sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
+        assert g.grp_n_elements == 2
+        assert g.current_element == 0
+        assert g.current_tag_len == -1
+        assert g.n_tags == 3
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec) + m.open_group.n_tags * sizeof(uint16_t))
+
+        assert fix_data_tags[0] == 1
+        assert fix_data_tags[1] == 3
+        assert fix_data_tags[2] == 4
+
+        assert fix_data_el_offsets[0] == USHRT_MAX
+        assert fix_data_el_offsets[1] == USHRT_MAX
+
+        assert FIXMsg.is_valid(m, ) == 0
+
+
+    def test_group_add_tag(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, UCHAR_MAX)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 2000
+
+        cdef int i
+        cdef void* value
+        cdef uint16_t value_size
+
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        assert g != NULL
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec) + m.open_group.n_tags * sizeof(uint16_t))
+
+        cdef int val = 0
+        cdef int base_len = sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
+
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef FIXRec * rec
+        n_tags_added = 0
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
+                rec = <FIXRec*>(m.values + (m.header.last_position - sizeof(FIXRec) - sizeof(int)))
+                val_data = (m.values + (m.header.last_position - sizeof(int)))
+                n_tags_added += 1
+                assert rec.tag == i
+                assert rec.value_type == b'i'
+                assert rec.value_len == sizeof(int)
+                assert g.fix_rec.value_len == n_tags_added * (sizeof(FIXRec) + sizeof(int)) + base_len
+                self.assertEqual((<int*>val_data)[0], val)
+
+                #self.assertEqual(FIXMsg.group_get(m, 10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
+                #assert (<int *> val_data)[0] == val
+            #
+            if j == 0:
+                assert fix_data_el_offsets[j] == m.header.last_position - 3 * (sizeof(FIXRec) + sizeof(int))
+            else:
+                assert fix_data_el_offsets[j]-fix_data_el_offsets[j-1] == 3 *  (sizeof(FIXRec) + sizeof(int))
+
+            # First tag always must be in place
+            rec = <FIXRec *> (m.values + fix_data_el_offsets[j])
+            assert rec.tag == 1
+
+        self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + base_len)
+
+        assert FIXMsg.is_valid(m, ) == 0 # Group not finished
+        self.assertEqual(FIXMsg.group_finish(m, 10), 1)
+        assert FIXMsg.is_valid(m, ) == 1 # All good
+
+        self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + sizeof(FIXRec) + base_len)
+
+        rec = <FIXRec *>(m.values + (m.header.last_position - sizeof(FIXRec)))
+        assert rec.tag == 0
+        assert rec.value_len == 0
+        assert rec.value_type == b'\0'
+        g = <FIXGroupRec *>(m.values + m.header.last_position - g.fix_rec.value_len - sizeof(FIXGroupRec))
+        assert g.fix_rec.tag == 10
+
+        assert m.open_group == NULL
+        assert g != NULL
+
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(FIXMsg.group_get(m, 10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
+                assert (<int*>val_data)[0] == val
+
+    def test_group_finish(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, UCHAR_MAX)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 2000
+
+        cdef int i
+        cdef void* value
+        cdef uint16_t value_size
+
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
+
+        self.assertEqual(FIXMsg.group_finish(m, 10), -17) # ERR_GROUP_NOT_COMPLETED
+
+        cdef FIXGroupRec * g = m.open_group
+        assert g != NULL
+
+        cdef uint16_t *fix_data_tags = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec))
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> m.open_group + sizeof(FIXGroupRec) + m.open_group.n_tags * sizeof(uint16_t))
+
+        cdef int val = 0
+        cdef int base_len = sizeof(uint16_t) * 2 + sizeof(uint16_t)*3
+
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef FIXRec * rec
+        n_tags_added = 0
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
+
+        self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + base_len)
+        last_position = m.header.last_position
+        self.assertEqual(FIXMsg.group_finish(m, 10), 1)
+
+        # Make sure that last position and group size increased
+        self.assertEqual(g.fix_rec.value_len, 6 * (sizeof(FIXRec) + sizeof(int)) + sizeof(FIXRec) + base_len)
+        assert m.header.last_position == last_position + sizeof(FIXRec)
+
+        rec = <FIXRec *> (m.values + (m.header.last_position - sizeof(FIXRec)))
+        assert rec.tag == 0
+        assert rec.value_len == 0
+        assert rec.value_type == b'\0'
+        assert m.open_group == NULL
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1, f'i={i}')
+
+    def test_group_start_errors__already_started(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__already_started(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), 1)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__empty_group(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 0, 3, [1, 3, 4]), -9) #ERR_GROUP_EMPTY
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 0, [1, 3, 4]), -9)  #ERR_GROUP_EMPTY
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__too_many_tags(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 127, [1, 3, 4]), -13) #ERR_GROUP_TOO_MANY
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__duplicate_tag_global_fixgrp(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        cdef int a = 1234
+        FIXMsg.set(m, 10, &a, sizeof(int), b'i')
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -1) #ERR_FIX_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__duplicate_tag_global(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        cdef int a = 1234
+        FIXMsg.set(m, 3, &a, sizeof(int), b'i')
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__duplicate_tag_group(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        # Duplicate between tag in members and group's tag
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [10, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__duplicate_tag_members(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        # Duplicates inside members
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [3, 3, 4]), -10)  #ERR_GROUP_DUPLICATE_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_start_errors__tag_zero(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        # Duplicates inside members
+        self.assertEqual(FIXMsg.group_start(m, 0, 1, 3, [1, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
+        self.assertEqual(FIXMsg.group_start(m, 1, 1, 3, [0, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_errors__not_started(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -11) # ERR_GROUP_NOT_STARTED
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+
+    def test_group_add_tag_errors__grp_not_match(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 11, 1, &a, sizeof(int), b'i'), -12) # ERR_GROUP_NOT_MATCH
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_errors__start_tag_expected(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -14) # ERR_GROUP_START_TAG_EXPECTED
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_errors__elements_overflow(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -15) # ERR_GROUP_EL_OVERFLOW
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+
+    def test_group_add_tag_errors__tag_not_in_group(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 7, &a, sizeof(int), b'i'), -16) # ERR_GROUP_TAG_NOT_INGROUP
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_errors__tag_wrong_order_and_duplicates(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), -10)# ERR_GROUP_DUPLICATE_TAG
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_errors__tag_wrong_order_and_duplicates_2nd_grp(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &a, sizeof(int), b'i'), -10)  # ERR_GROUP_DUPLICATE_TAG
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_zero(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 0, &a, sizeof(int), b'i'), -5) # ERR_FIX_ZERO_TAG
+        self.assertEqual(FIXMsg.group_add_tag(m, 0, 1, &a, sizeof(int), b'i'), -5)  # ERR_FIX_ZERO_TAG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_too_long(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 1025, b'i'), -3) # ERR_FIX_VALUE_TOOLONG
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_size_zero(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 0, b'i'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_add_tag_string_length_mismatch(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        cdef void *value
+        cdef uint16_t value_size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef char * s = b'12345'
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &s, strlen(s), b's'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+
+    def test_group_add_tag_type_not_allowed(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'\0'), -4) # ERR_FIX_NOT_ALLOWED
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'\x07'), -4)  # ERR_FIX_NOT_ALLOWED
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_finish_errors(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void *value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_finish(m, 10), -11) #ERR_GROUP_NOT_STARTED
+
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        self.assertEqual(FIXMsg.group_finish(m, 11), -12)  #ERR_GROUP_NOT_MATCH
+        self.assertEqual(FIXMsg.group_finish(m, 10), -17)  #ERR_GROUP_NOT_COMPLETED
+
+        cdef int a = 1234
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
+
+        #
+        # Get / set also rejected when the group is open
+        #
+        self.assertEqual(FIXMsg.set(m, 123, &a, sizeof(int), b'i'), -8 ) # ERR_GROUP_NOT_FINISHED
+        self.assertEqual(FIXMsg.get(m, 123, &value, &size, b'i'), -8)  # ERR_GROUP_NOT_FINISHED
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 1, &value, &size, b'i'), -8)
+        self.assertEqual(FIXMsg.group_count(m, 10), -8)
+
+        self.assertEqual(FIXMsg.group_finish(m, 10), -17)  #ERR_GROUP_NOT_COMPLETED
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_finish(m, 10), 1)  # Success
+        assert m.open_group == NULL
+
+        assert m.header.tag_errors > 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_get_errors__not_finished(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        for j in range(2):
+            for i in [1, 3, 4]:
+                val = (j+1) * 100 + i
+                self.assertEqual(FIXMsg.group_add_tag(m, 10, i, &val, sizeof(int), b'i'), 1, f'i={i}')
+
+            self.assertEqual(FIXMsg.group_get(m, 10, j, 1, &val_data, &val_size, b'i'), -8) # ERR_GROUP_NOT_FINISHED
+            self.assertEqual(FIXMsg.group_count(m, 10), -8) # ERR_GROUP_NOT_FINISHED
+        assert m.header.tag_errors == 0
+        assert FIXMsg.is_valid(m, ) == 0  # Had errors
+
+    def test_group_get_errors__not_found(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        self.assertEqual(FIXMsg.group_get(m, 101, 0, 1, &val_data, &val_size, b'i'), 0) # ERR_NOT_FOUND
+
+        self.assertEqual(FIXMsg.group_count(m, 101), 0)  # ERR_NOT_FOUND
+
+    def test_group_get_errors__duplicate_tag_or_overflow(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        # All good
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1)
+
+        # Oops tag dupe
+        assert FIXMsg.set(m, 10, &val, sizeof(int), b'i') == -1
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -1) # ERR_FIX_DUPLICATE_TAG
+
+        self.assertEqual(FIXMsg.group_get(m, USHRT_MAX-10, 0, 1, &val_data, &val_size, b'i'), -6)  # ERR_DATA_OVERFLOW
+
+        assert FIXMsg.is_valid(m, ) == 0
+
+    def test_group_get_errors__tag_zero_or_not_allowed(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        self.assertEqual(FIXMsg.group_get(m, 0, 1, 1, &val_data, &val_size, b'i'), -5) # ERR_FIX_ZERO_TAG
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 0, &val_data, &val_size, b'i'), -5)  # ERR_FIX_ZERO_TAG
+        self.assertEqual(FIXMsg.group_get(m, 35, 1, 1, &val_data, &val_size, b'i'), -4)  # ERR_FIX_NOT_ALLOWED
+
+        self.assertEqual(FIXMsg.group_count(m, 0), -5)  # ERR_FIX_ZERO_TAG
+        self.assertEqual(FIXMsg.group_count(m, 35), -4)  # ERR_FIX_NOT_ALLOWED
+
+        # Read operation doesn't trigger msg corruption!
+        assert FIXMsg.is_valid(m, ) == 1
+
+
+    def test_group_get_errors__fix_rec_type_mismach(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        # Corrupting fix rec type!
+        g.fix_rec.value_type = b'w'
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+        self.assertEqual(FIXMsg.group_count(m, 10), -19)  # ERR_GROUP_CORRUPTED
+
+        # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
+        assert FIXMsg.is_valid(m, ) == 0
+
+
+    def test_group_get_errors__el_out_of_bounds(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 2, 1, &val_data, &val_size, b'i'), -15)  # ERR_GROUP_EL_OVERFLOW
+
+    def test_group_get_errors__tag_type_mismatch(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'c'), -2)  # ERR_FIX_TYPE_MISMATCH
+
+    def test_group_get_errors__tag_not_in_group(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void* val_data = NULL
+        cdef uint16_t val_size = 0
+        cdef int val = 0
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 5, &val_data, &val_size, b'i'), -16)  # ERR_GROUP_TAG_NOT_INGROUP
+
+    def test_group_get_errors__tag_not_found(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef int val = 0
+        cdef void* val_data = &val
+        cdef uint16_t val_size = 234
+
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 3, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 4, &val, sizeof(int), b'i'), 1)
+
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
+
+        assert FIXMsg.group_finish(m, 10) == 1
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(FIXGroupRec) + g.n_tags * sizeof(uint16_t))
+        for i in range(3):
+            assert fix_data_el_offsets[i] < 1000
+
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 2, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 3, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 4, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 1, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 2, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 3, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
+        self.assertEqual(FIXMsg.group_get(m, 10, 1, 4, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 2, 1, &val_data, &val_size, b'i'), 1)  # OK
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 2, 2, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
+        self.assertEqual(FIXMsg.group_get(m, 10, 2, 3, &val_data, &val_size, b'i'), 1)  # OK
+        self.assertEqual(FIXMsg.group_get(m, 10, 2, 4, &val_data, &val_size, b'i'), 0)  # ERR_NOT_FOUND
+
+        assert val_data == NULL
+        assert val_size == 0
+
+    def test_group_get_errors__corrupted_offset(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef int val = 0
+        cdef void* val_data = &val
+        cdef uint16_t val_size = 234
+
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
+        assert FIXMsg.group_finish(m, 10) == 1
+        assert FIXMsg.is_valid(m, ) == 1
+
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(FIXGroupRec) + g.n_tags * sizeof(uint16_t))
+        fix_data_el_offsets[0] = USHRT_MAX - 1
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+        # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
+        assert FIXMsg.is_valid(m, ) == 0
+
+    def test_group_get_errors__corrupted_start_tag(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef int val = 0
+        cdef void* val_data = &val
+        cdef uint16_t val_size = 234
+
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+        self.assertEqual(FIXMsg.group_start(m, 10, 1, 4, [1, 2, 3, 4]), 1)
+        cdef FIXGroupRec * g = m.open_group
+        val = 123
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &val, sizeof(int), b'i'), 1)
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &val, sizeof(int), b'i'), 1)
+        assert FIXMsg.group_finish(m, 10) == 1
+        assert FIXMsg.is_valid(m, ) == 1
+
+        cdef uint16_t *fix_data_el_offsets = <uint16_t *> (<void *> g + sizeof(FIXGroupRec) + g.n_tags * sizeof(uint16_t))
+
+        cdef FIXRec *trec = <FIXRec *> (m.values + fix_data_el_offsets[0])
+        trec.tag = 5
+
+        self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
+
+        assert FIXMsg.is_valid(m, ) == 0
+
+
     # def test_groups_resize_and_multi_types(self):
     #     # Exact match no resize
     #     cdef FIXMsgStruct * m
@@ -1425,7 +1391,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
     #                 break
     #
     #     # No bytes left in the buffer
-    #     self.assertEqual(sizeof(GroupRec), 14)
+    #     self.assertEqual(sizeof(FIXGroupRec), 14)
     #     self.assertEqual(m.header.data_size, 65450)
     #     self.assertEqual(m.header.last_position,  65410)  # Real bytes written
     #
@@ -1473,7 +1439,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
     #                 break
     #
     #     # No bytes left in the buffer
-    #     self.assertEqual(sizeof(GroupRec), 14)
+    #     self.assertEqual(sizeof(FIXGroupRec), 14)
     #     self.assertEqual(m.header.data_size, 65450)
     #     self.assertEqual(m.header.last_position, 65410)  # Real bytes written
     #
