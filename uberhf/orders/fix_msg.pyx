@@ -1,7 +1,7 @@
 from libc.stdlib cimport malloc, realloc, free
 from libc.stdio cimport printf
 from libc.string cimport memcpy, memset, strlen, memmove
-from libc.limits cimport USHRT_MAX
+from libc.limits cimport USHRT_MAX, UCHAR_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
 from uberhf.includes.utils cimport strlcpy
 from uberhf.orders.fix_tag_tree cimport binary_tree_destroy, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
@@ -47,49 +47,48 @@ DEF ERR_GROUP_CORRUPTED        = -19
 DEF ERR_UNEXPECTED_TYPE_SIZE   = -20
 DEF ERR_TAG_RESIZE_REQUIRED    = -21
 DEF ERR_DATA_RESIZE_REQUIRED   = -22
+DEF ERR_DATA_READ_ONLY         = -23
 
 
 cdef class FIXMsg:
     @staticmethod
-    cdef FIXMsgStruct * create(char msg_type, uint16_t data_size, uint16_t tag_tree_capacity) nogil:
-
-        cdef uint16_t _data_size = max(data_size, 128)
-        cdef FIXMsgStruct * self = <FIXMsgStruct *> malloc(sizeof(FIXMsgStruct) +                               # Header
-                                                           sizeof(FIXOffsetMap) * tag_tree_capacity +           # Tag index
-                                                           sizeof(uint16_t)*2 +                                 # 2 magic fields
-                                                           _data_size)                                          # Value storage size
+    cdef FIXMsgStruct * create(char msg_type, uint16_t data_size, uint8_t tag_tree_capacity) nogil:
+        if data_size == 0:
+            return NULL
+        if tag_tree_capacity == 0:
+            return NULL
+        cdef FIXMsgStruct * self = <FIXMsgStruct *> malloc(_calc_data_size(data_size, tag_tree_capacity))                                          # Value storage size
 
         if self == NULL:
             return NULL
         # Tag index pointer
-        self.tags = <FIXOffsetMap*> (<void *> self + sizeof(FIXMsgStruct))
-
-        # Put magic number between tag index and values starting point, to make sure that resizing of tags doesn't affect the integrity
-        cdef uint16_t * magic_middle = <uint16_t *>(<void*>self + sizeof(FIXMsgStruct) + sizeof(FIXOffsetMap) * tag_tree_capacity)
-        magic_middle[0] = FIX_MAGIC
-
-        # Tag data pointer
-        self.values = <void*>self + sizeof(FIXMsgStruct) + sizeof(FIXOffsetMap) * tag_tree_capacity + sizeof(uint16_t)
-
-        cdef uint16_t * magic_end = <uint16_t *> (<void *> self +
-                                                  sizeof(FIXMsgStruct) +
-                                                  sizeof(FIXOffsetMap) * tag_tree_capacity +
-                                                  sizeof(uint16_t) + _data_size)
-        magic_end[0] = FIX_MAGIC
+        self.tags = _calc_offset_tags(self)
 
         self.open_group = NULL
         self.header.magic_number = FIX_MAGIC
         self.header.msg_type = msg_type
-        self.header.data_size = _data_size
+        self.header.data_size = data_size
         self.header.last_position = 0
         self.header.n_reallocs = 0
         self.header.tag_errors = 0
+        self.header.is_read_only = 0
 
         # Initialize tags
         self.header.tags_count = 0
         self.header.tags_capacity = tag_tree_capacity
         self.header.tags_last = 0
-        self.header.tags_last_idx = USHRT_MAX
+        self.header.tags_last_idx = UCHAR_MAX
+
+        # Tag data pointer (MUST BE AFTER HEADER INITIALIZED!)
+        self.values = _calc_offset_values(self)
+
+
+        # Put magic number between tag index and values starting point, to make sure that resizing of tags doesn't affect the integrity
+        cdef uint16_t * magic_middle = _calc_offset_magic_middle(self)
+        magic_middle[0] = FIX_MAGIC
+
+        cdef uint16_t * magic_end = _calc_offset_magic_end(self)
+        magic_end[0] = FIX_MAGIC
 
         return self
 
@@ -111,34 +110,34 @@ cdef class FIXMsg:
         - valid msg type > 0
         :return:
         """
-        cdef uint16_t * magic_middle = <uint16_t*>(<void *> self + sizeof(FIXMsgStruct) + sizeof(FIXOffsetMap) * self.header.tags_capacity)
-        cdef uint16_t * magic_end = <uint16_t *> (<void *> self +
-                                                  sizeof(FIXMsgStruct) +
-                                                  sizeof(FIXOffsetMap) * self.header.tags_capacity +
-                                                  sizeof(uint16_t) +
-                                                  self.header.data_size)
+        cdef uint16_t * magic_middle = _calc_offset_magic_middle(self)
+        cdef uint16_t * magic_end = _calc_offset_magic_end(self)
 
-        return self.header.magic_number == FIX_MAGIC and \
-               self.header.last_position < USHRT_MAX and \
-               self.header.tag_errors == 0 and \
-               self.open_group == NULL and \
-               self.header.msg_type > 0 and \
-               self.header.tags_capacity > 0 and \
-               magic_middle[0] == FIX_MAGIC and \
-               magic_end[0] == FIX_MAGIC
+        return (
+                self.header.magic_number == FIX_MAGIC and
+                self.header.last_position < USHRT_MAX and
+                self.header.tag_errors == 0 and
+                self.open_group == NULL and
+                self.header.msg_type > 0 and
+                self.header.tags_capacity > 0 and
+                magic_middle[0] == FIX_MAGIC and
+                magic_end[0] == FIX_MAGIC
+        )
 
     @staticmethod
     cdef uint16_t _set_tag_offset(FIXMsgStruct * self, uint16_t tag, uint16_t tag_offset) nogil:
         if tag == 0 or tag > USHRT_MAX - 10 or tag_offset >= USHRT_MAX - 10:
+            return TAG_ERROR
+        if self.header.is_read_only:
             return TAG_ERROR
 
         cdef uint16_t tree_size = self.header.tags_count
         cdef uint16_t lo, hi, mid
 
         if tree_size + 1 > self.header.tags_capacity:
+            # This is typically unexpected behavior, and should be handled by has_capacity()
             self.header.tag_errors += 1
             return TAG_NEED_RESIZE
-
 
         if tree_size == 0:
             self.tags[0].tag = tag
@@ -233,8 +232,9 @@ cdef class FIXMsg:
                 start_index = middle
 
         if self.tags[start_index].tag == tag:
-            self.header.tags_last = tag
-            self.header.tags_last_idx = start_index
+            if not self.header.is_read_only:
+                self.header.tags_last = tag
+                self.header.tags_last_idx = start_index
             data_offset = self.tags[start_index].data_offset
             if data_offset == USHRT_MAX:
                 # Duplicate sign
@@ -243,6 +243,113 @@ cdef class FIXMsg:
                 return data_offset
 
         return TAG_NOT_FOUND
+
+    @staticmethod
+    cdef bint has_capacity(FIXMsgStruct * self, uint16_t new_rec_size) nogil:
+        cyassert(new_rec_size > 0)
+
+        if self.header.tags_count == UCHAR_MAX:
+            return False
+
+        if self.header.tags_count + 1 > self.header.tags_capacity:
+            return False
+
+        if <uint16_t> (USHRT_MAX - self.header.last_position) <= new_rec_size:
+            return False
+
+        return self.header.last_position + new_rec_size <= self.header.data_size
+
+    @staticmethod
+    cdef FIXMsgStruct * resize(FIXMsgStruct * self, uint8_t add_tags, uint16_t add_values_size) nogil:
+        """
+        Reallocate memory for binary FIX data container, and return new pointer to it
+        
+        Read only containers not allowed to resize. Invalid containers not allowed to resize!
+        
+        On error this function will return NULL, but old pointer will remain untouched!
+                
+        :param add_tags: number of extra tags to add [0;255]
+        :param add_values_size: extra bytes of capacity for binary tag data
+        :return: NULL on error, valid FIXMsgStruct * pointer on success
+        """
+        if self.header.is_read_only:
+            return NULL
+
+        if not FIXMsg.is_valid(self):
+            return NULL
+
+
+        if <uint16_t> (USHRT_MAX - self.header.data_size) <= add_values_size:
+            self.header.last_position = USHRT_MAX
+            return NULL
+        if (UCHAR_MAX - self.header.tags_capacity) <= add_tags:
+            self.header.last_position = USHRT_MAX
+            return NULL
+
+        # Resize to extra_size + approx 10 double tags room
+        cdef size_t new_size = self.header.data_size + add_values_size
+        cdef uint8_t new_tags = self.header.tags_capacity + add_tags
+
+        # Only new_size increase allowed!
+        cyassert(new_size >= self.header.data_size)
+        cyassert(new_tags >= self.header.tags_capacity)
+
+        cdef int open_group_offset = -1
+        cdef int open_group_tag = -1
+        if self.open_group != NULL:
+            cyassert(0)  # TODO: fix this later
+            # We have open group, keep offset between group and self.values if main pointer will be changed
+            open_group_offset = <void *> self.open_group - self.values
+            open_group_tag = self.open_group.fix_rec.tag
+
+        cdef int old_magic_middle_offset = (<void*>_calc_offset_magic_middle(self)) - (<void*>self)
+
+        # From `man 3 realloc`
+        #    If realloc() fails, the original block is left untouched; it is not freed or moved
+        cdef FIXMsgStruct * new_self = <FIXMsgStruct*>realloc(self, _calc_data_size(new_size, new_tags))
+        if new_self == NULL:
+            # MEMORY ERROR
+            # On failure keep data untouched, but prevent any updates
+            self.header.last_position = USHRT_MAX
+            return NULL
+
+        new_self.tags = _calc_offset_tags(new_self)
+
+        if add_tags > 0:
+            # Tags capacity has changed let's move memory
+            memmove(<void*> new_self + old_magic_middle_offset + add_tags*sizeof(FIXOffsetMap),
+                    <void*> new_self + old_magic_middle_offset,
+                    new_size + sizeof(uint16_t)*2 , # Include also size of 2 magic fields
+                    )
+
+        new_self.values = _calc_offset_values(new_self)
+        new_self.header.data_size = <uint16_t> new_size
+        new_self.header.n_reallocs += 1
+        new_self.header.tags_capacity = new_tags
+
+        cdef uint16_t * magic_middle = _calc_offset_magic_middle(new_self)
+        cdef uint16_t * magic_end = _calc_offset_magic_end(new_self)
+
+        # Magic middle should be in place
+        cyassert(magic_middle[0] == FIX_MAGIC)
+
+        # Make sure after tags capacity change without value size the magic_end is valid
+        cyassert(add_values_size != 0 or magic_end[0] == FIX_MAGIC)
+
+        # Set magic end because of data resize
+        magic_end[0] = FIX_MAGIC
+
+        if self.open_group != NULL:
+            cyassert(0)  # TODO: fix this later
+            # self.open_group = <GroupRec *> (self.values + open_group_offset)
+            # cyassert(self.open_group.fix_rec.tag == open_group_tag)
+            # cyassert(self.open_group.fix_rec.value_type == b'\x07')
+
+        # Message must remain valid after resize (i.e. magic numbers are in place)
+        cyassert(FIXMsg.is_valid(new_self))
+
+        return new_self
+
 
     @staticmethod
     cdef int set(FIXMsgStruct * self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
@@ -293,8 +400,8 @@ cdef class FIXMsg:
         cdef int rc = 0
         cdef uint16_t last_position = self.header.last_position
 
-        if False: #self._request_new_space(value_size + sizeof(FIXRec)) < 0:
-            return ERR_DATA_OVERFLOW
+        if FIXMsg.has_capacity(self, value_size + sizeof(FIXRec)) == 0:
+            return ERR_DATA_RESIZE_REQUIRED
 
         cdef FIXRec * rec
 

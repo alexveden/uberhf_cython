@@ -25,7 +25,16 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(14, sizeof(FIXGroupRec))
 
     def test_init_msg(self):
+        # Zero data size
         cdef FIXMsgStruct * m = FIXMsg.create(<char>b'C', 0, 10)
+        assert m == NULL
+
+        # Zero tags
+        m = FIXMsg.create(<char> b'C', 10, 0)
+        assert m == NULL
+
+        m = FIXMsg.create(<char> b'C', 128, 10)
+        assert m != NULL
 
         assert m.header.data_size == 128
         assert m.header.msg_type == b'C'
@@ -35,6 +44,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.header.tag_errors == 0
         assert m.open_group == NULL
         assert FIXMsg.is_valid(m) == 1
+        assert m.header.is_read_only == 0
         FIXMsg.destroy(m)
 
 
@@ -48,6 +58,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
     def test_get_set_tag_index(self):
         m = FIXMsg.create(<char> b'C', 1000, 64)
+        assert m != NULL
 
         assert FIXMsg._set_tag_offset(m, 1, 10) == 0
         assert m.header.tags_last == 1
@@ -76,6 +87,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
     def test_get_set_tag_index_random_insert_and_search(self):
         m = FIXMsg.create(<char> b'C', 1000, 64)
+        assert m != NULL
 
         assert FIXMsg._set_tag_offset(m, 3, 30) == 0
         assert FIXMsg._set_tag_offset(m, 6, 60) == 1
@@ -104,6 +116,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
     def test_get_set_tag_index_duplicate_tags(self):
         m = FIXMsg.create(<char> b'C', 1000, 64)
+        assert m != NULL
 
         assert FIXMsg._set_tag_offset(m, 3, 30) == 0
         assert FIXMsg._set_tag_offset(m, 3, 60) == 65533  #DEF TAG_DUPLICATE = 	65533 # USHRT_MAX-2
@@ -115,6 +128,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
     def test_get_set_tag_index_overflow(self):
         m = FIXMsg.create(<char> b'C', 1000, 1)
+        assert m != NULL
 
         assert FIXMsg._set_tag_offset(m, 3, 30) == 0
         assert FIXMsg._set_tag_offset(m, 6, 60) == 65532  #DEF TAG_NEED_RESIZE = 	65532 # USHRT_MAX-3
@@ -124,6 +138,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
     def test_get_set_raw(self):
         cdef FIXMsgStruct * m = FIXMsg.create(<char>b'C', 2000, 100)
+        assert m != NULL
         cdef int value = 123
 
         assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
@@ -160,6 +175,123 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.get(m, 11, &p_value, &p_size, b'\x07'), -4)
         assert p_value == NULL
         assert p_size == 0
+        FIXMsg.destroy(m)
+
+    def test_set_resize(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char>b'C', 10, 2)
+        assert m != NULL
+        cdef int value = 123
+        assert sizeof(int) + sizeof(FIXRec) == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
+        assert m.header.tags_count == 1
+        assert m.header.tags_capacity == 2
+        assert m.header.data_size == 10
+        assert m.header.last_position == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.has_capacity(m, 10) == 0
+
+        cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 0, 10)
+        assert m2 != NULL
+        m = m2  # m may not be a valid pointer anymore!
+
+        # Getting reject, but message is still valid.
+        # Giving a chance to user code to resize it
+        assert FIXMsg.set(m, 12, &value, sizeof(int), b'i') ==  1
+        assert FIXMsg.is_valid(m) == 1
+
+        FIXMsg.destroy(m)
+
+    def test_set_exact_capacity(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'C', 10, 1)
+        assert m != NULL
+        cdef int value = 123
+        assert sizeof(int) + sizeof(FIXRec) == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
+        assert m.header.tags_count == 1
+        assert m.header.tags_capacity == 1
+        assert m.header.data_size == 10
+        assert m.header.last_position == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert m.tags[0].tag == 11
+        assert m.tags[0].data_offset == 0
+        cdef FIXRec * rec = <FIXRec *> (m.values + sizeof(FIXRec) * 0)
+        assert rec.tag == 11
+        assert rec.value_len == 4
+        assert rec.value_type == b'i'
+
+        assert FIXMsg.has_capacity(m, 10) == 0
+
+        # Getting reject, but message is still valid.
+        # Giving a chance to user code to resize it
+        assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == -22  # ERR_DATA_RESIZE_REQUIRED
+        assert FIXMsg.is_valid(m) == 1
+
+        FIXMsg.destroy(m)
+
+    def test_set_resize_only_tags(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char>b'C', 20, 1)
+        assert m != NULL
+        cdef int value = 123
+        assert sizeof(int) + sizeof(FIXRec) == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
+        assert m.header.tags_count == 1
+        assert m.header.tags_capacity == 1
+        assert m.header.data_size == 20
+        assert m.header.last_position == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.has_capacity(m, 10) == 0
+
+        cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 1, 0)
+        assert m2 != NULL
+        m = m2  # m may not be a valid pointer anymore!
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 12, &value, sizeof(int), b'i') ==  1
+        assert FIXMsg.is_valid(m) == 1
+        assert m.header.tags_count == 2
+        assert m.header.tags_capacity == 2
+        assert m.header.data_size == 20
+        assert m.header.last_position == 20
+
+        FIXMsg.destroy(m)
+
+    def test_set_resize_both_tags_data(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char>b'C', 10, 1)
+        assert m != NULL
+        cdef int value = 123
+        assert sizeof(int) + sizeof(FIXRec) == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
+        assert m.header.tags_count == 1
+        assert m.header.tags_capacity == 1
+        assert m.header.data_size == 10
+        assert m.header.last_position == 10
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.has_capacity(m, 10) == 0
+        cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 1, 10)
+        assert m2 != NULL
+        m = m2  # m may not be a valid pointer anymore!
+        assert m.header.n_reallocs == 1
+        assert FIXMsg.is_valid(m) == 1
+
+        assert FIXMsg.set(m, 12, &value, sizeof(int), b'i') ==  1
+        assert FIXMsg.is_valid(m) == 1
+        assert m.header.tags_count == 2
+        assert m.header.tags_capacity == 2
+        self.assertEqual(m.header.data_size, 20)
+        assert m.header.last_position == 20
+
         FIXMsg.destroy(m)
     #-----------------------------
     #
