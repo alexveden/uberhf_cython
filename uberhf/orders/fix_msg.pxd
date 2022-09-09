@@ -12,6 +12,7 @@ ctypedef struct FIXHeader:
     uint8_t n_reallocs
     uint8_t tag_errors
     uint8_t is_read_only
+    int8_t last_error
 
     # Tag tree values
     uint8_t tags_count
@@ -87,6 +88,12 @@ cdef class FIXMsg:
     cdef void destroy(FIXMsgStruct * self) nogil
 
     @staticmethod
+    cdef int get_last_error(FIXMsgStruct * self) nogil
+
+    @staticmethod
+    cdef const char * get_last_error_str(FIXMsgStruct * self, int e) nogil
+
+    @staticmethod
     cdef bint is_valid(FIXMsgStruct * self) nogil
 
     @staticmethod
@@ -117,3 +124,36 @@ cdef class FIXMsg:
     cdef int group_get(FIXMsgStruct * self, uint16_t group_tag, uint16_t el_idx, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
     @staticmethod
     cdef int group_count(FIXMsgStruct * self, uint16_t group_tag) nogil
+
+    #
+    # Generic type get/set
+    #
+    @staticmethod
+    cdef int set_int(FIXMsgStruct * self, uint16_t tag, int value) nogil
+    @staticmethod
+    cdef int * get_int(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_bool(FIXMsgStruct * self, uint16_t tag, bint value) nogil
+    @staticmethod
+    cdef int8_t * get_bool(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_char(FIXMsgStruct * self, uint16_t tag, char value) nogil
+    @staticmethod
+    cdef char * get_char(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_double(FIXMsgStruct * self, uint16_t tag, double value) nogil
+    @staticmethod
+    cdef double * get_double(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_utc_timestamp(FIXMsgStruct * self, uint16_t tag, long value_ns) nogil
+    @staticmethod
+    cdef long * get_utc_timestamp(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_str(FIXMsgStruct * self, uint16_t tag, char *value, uint16_t length) nogil
+    @staticmethod
+    cdef char * get_str(FIXMsgStruct * self, uint16_t tag) nogil

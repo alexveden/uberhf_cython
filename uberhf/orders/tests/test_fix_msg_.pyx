@@ -6,7 +6,7 @@ from uberhf.prototols.transport cimport *
 from uberhf.prototols.libzmq cimport *
 from uberhf.includes.uhfprotocols cimport *
 from uberhf.includes.utils cimport strlcpy, datetime_nsnow
-from libc.stdint cimport uint64_t, uint16_t
+from libc.stdint cimport uint64_t, uint16_t, int8_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy, memset
 from libc.stdlib cimport malloc, free
 from uberhf.prototols.messages cimport *
@@ -72,6 +72,7 @@ cdef FIXMsgStruct * make_almost_overflowed(int n_bytes_remaining):
     return m
 
 
+# noinspection PyTypeChecker
 class CyFIXStaticMsgTestCase(unittest.TestCase):
     def test_size_of_structs(self):
         self.assertEqual(18, sizeof(FIXHeader))
@@ -1592,225 +1593,227 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.is_valid(m, ) == 0
         FIXMsg.destroy(m)
 
-    # def test_getset_int(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef double i = 12.0
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'i'), 1, f'{i}')
-    #
-    #     assert FIXMsg.set_int(m, 12, 123) == 1
-    #     assert FIXMsg.get_int(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_int(m, 13) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0    #ERR_NOT_FOUND
-    #     assert FIXMsg.get_int(m, 12)[0] == 123
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    #     assert FIXMsg.get(m, 12, &value, &size, b'i') == 1
-    #     assert (<int*>value)[0] == 123
-    #
-    #
-    # def test_getset_bool(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef double i = 12.0
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'b'), 1, f'{i}')
-    #
-    #     assert FIXMsg.set_bool(m, 13, 123) == -20
-    #     assert m.header.tag_errors > 0
-    #
-    #     assert FIXMsg.set_bool(m, 12, True) == 1
-    #     assert FIXMsg.get_bool(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_bool(m, 13) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
-    #     assert FIXMsg.get_bool(m, 12)[0] == 1
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    #     assert FIXMsg.get(m, 12, &value, &size, b'b') == 1
-    #     assert (<bint *> value)[0] == 1
-    #
-    # def test_getset_char(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef double i = 12.0
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'c'), 1, f'{i}')
-    #
-    #     for c in range(-127, 20):
-    #         # Negative chars, and all less than space ascii <20> not allowed
-    #         assert FIXMsg.set_char(m, 13, c) == -20
-    #
-    #     # Char #127 (<del>) not allowed
-    #     assert FIXMsg.set_char(m, 13, 127) == -20
-    #
-    #     assert FIXMsg.set_char(m, 12, 20) == 1
-    #     assert FIXMsg.set_char(m, 15, 126) == 1
-    #
-    #     assert FIXMsg.get_char(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_char(m, 13) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
-    #     assert FIXMsg.get_char(m, 12)[0] == 20
-    #     assert FIXMsg.get_char(m, 15)[0] == 126
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    #     assert FIXMsg.get(m, 12, &value, &size, b'c') == 1
-    #     assert (<char *> value)[0] == 20
-    #     assert FIXMsg.get(m, 15, &value, &size, b'c') == 1
-    #     assert (<char *> value)[0] == 126
-    #
-    #
-    # def test_getset_double(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i = 12
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'f'), 1, f'{i}')
-    #
-    #     assert FIXMsg.set_double(m, 12, 123.456) == 1
-    #     assert FIXMsg.get_double(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_double(m, 13) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0    #ERR_NOT_FOUND
-    #     assert FIXMsg.get_double(m, 12)[0] == 123.456
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    #     assert FIXMsg.get(m, 12, &value, &size, b'f') == 1
-    #     assert (<double*>value)[0] == 123.456
-    #
-    # def test_getset_timestamp(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     cdef long dt_now = datetime_nsnow()
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i = 12
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b't'), 1, f'{i}')
-    #
-    #     assert FIXMsg.set_utc_timestamp(m, 12, dt_now) == 1
-    #     assert FIXMsg.get_utc_timestamp(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_utc_timestamp(m, 13) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
-    #     assert FIXMsg.get_utc_timestamp(m, 12)[0] == dt_now
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    #     assert FIXMsg.get(m, 12, &value, &size, b't') == 1
-    #     assert (<long *> value)[0] == dt_now
-    #
-    #
-    # def test_getset_str(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     cdef void * value
-    #     cdef uint16_t size
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef double i = 0
-    #     cdef char* test_s = b'123132213123'
-    #
-    #     # Empty strings are not allowed!
-    #     assert m.header.tag_errors == 0
-    #     self.assertEqual(FIXMsg.set_str(m, 12, b'', 0), -20)
-    #     assert m.header.tag_errors == 1
-    #
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b's'), -20, f'{i}')
-    #     self.assertEqual(FIXMsg.set(m, 11, &test_s, strlen(test_s), b's'), -20, f'{i}')
-    #     assert m.header.tag_errors == 3
-    #
-    #     self.assertEqual(FIXMsg.set_str(m, 13, b'abc', 0), 1)
-    #     assert FIXMsg.set_str(m, 14, b'a', 3) == -20 # ERR_UNEXPECTED_TYPE_SIZE
-    #     assert FIXMsg.set_str(m, 15, test_s, 3) == -20
-    #     assert FIXMsg.set_str(m, 16, b'dfe', 3) == 1
-    #
-    #     assert FIXMsg.get_str(m, 10) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
-    #     assert FIXMsg.get_str(m, 17) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
-    #     assert FIXMsg.get_str(m, 12) == NULL
-    #     assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
-    #
-    #     assert FIXMsg.get_str(m, 13) != NULL
-    #     self.assertEqual(FIXMsg.get_last_error(m, ), 1)
-    #     assert FIXMsg.get_str(m, 16) != NULL
-    #     assert strcmp(FIXMsg.get_str(m, 13), b'abc') == 0
-    #     assert strcmp(FIXMsg.get_str(m, 16), b'dfe') == 0
-    #
-    #     assert FIXMsg.get(m, 16, &value, &size, b's') == 1
-    #     assert strcmp((<char *> value), b'dfe') == 0
-    #     assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
-    #
-    # def test_get_last_error(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, 1),  b'No error')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, 0),  b'Not found')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -1), b'Duplicated tag')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -2), b'Tag type mismatch')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -3), b'Value size exceeds 1024 limit')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -4), b'FIX(35) tag or type value is not allowed')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -5), b'FIX tag=0 is not allowed')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -6), b'FIX tag>=65525 or message capacity overflow')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -7), b'System memory error when resizing the message')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -8), b'You must finish the started group before using other methods')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -9), b'Group with zero members are not allowed')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -10), b'Group member tag is a duplicate with other tags added to message')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -11), b'You must call group_start() before adding group members')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -12), b'group_tag must match to the tag of the group_start()')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -13), b'Too many tags in the group, max 127 allowed')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -14), b'You must always add the first group item with the first tag in the group tag list')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -15), b'Group element is out of bounds, given at group_start()')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -16), b'Group member `tag` in not in tag list at group_start()')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -17), b'Trying to finish group with incomplete elements count added, as expected at group_start()')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -18), b'You must add group tags in the same order as tag groups at group_start()')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -19), b'Group data is corrupted')
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -20), b'Tag actual value or size does not match expected type size/value boundaries')
-    #
-    #     self.assertEqual(FIXMsg.get_last_error_str(m, -21), b'unknown error code')
-    #
-    # def test_fix_group_sample(self):
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
-    #     cdef uint16_t n_elements = 5
-    #
-    #     cdef int i = 123
-    #     cdef double f = 8907.889
-    #     cdef char c = b'V'
-    #     cdef char * s = b'my fancy string, it may be too long!'
-    #
-    #     assert FIXMsg.group_start(m, 100, n_elements, 4,  [10, 11, 12, 13]) == 1
-    #     for k in range(n_elements):
-    #         # start_tag is mandatory! TAG ORDER MATTERS!
-    #         FIXMsg.group_add_tag(m, 100, 10, &i, sizeof(int), b'i')
-    #         FIXMsg.group_add_tag(m, 100, 11, &f, sizeof(double), b'f')
-    #         # Other tags may be omitted or optional
-    #         #FIXMsg.group_add_tag(m, 100, 12, &c, sizeof(char), b'c')
-    #         FIXMsg.group_add_tag(m, 100, 13, s, strlen(s) + 1, b's')
-    #     assert FIXMsg.group_finish(m, 100) == 1
-    #
-    #     assert FIXMsg.group_count(m, 100) == 5
-    #
+    def test_getset_int(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000,20)
+
+        cdef double i = 12.0
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'i'), 1, f'{i}')
+
+        assert FIXMsg.set_int(m, 12, 123) == 1
+        assert FIXMsg.get_int(m, 10) == NULL
+        self.assertEqual(FIXMsg.get_last_error(m, ), -20)  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_int(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0    #ERR_NOT_FOUND
+        assert FIXMsg.get_int(m, 12)[0] == 123
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'i') == 1
+        assert (<int*>value)[0] == 123
+
+
+    def test_getset_bool(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef double i = 12.0
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'b'), 1, f'{i}')
+
+        assert FIXMsg.set_bool(m, 13, 123) == -20
+        assert m.header.tag_errors > 0
+
+        assert FIXMsg.set_bool(m, 12, True) == 1
+        assert FIXMsg.get_bool(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_bool(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_bool(m, 12)[0] == 1, FIXMsg.get_bool(m, 12)[0]
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'b') == 1
+        assert (<int8_t *> value)[0] == 1
+
+    def test_getset_char(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef double i = 12.0
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b'c'), 1, f'{i}')
+
+        for c in range(-127, 20):
+            # Negative chars, and all less than space ascii <20> not allowed
+            assert FIXMsg.set_char(m, 13, c) == -20
+
+        # Char #127 (<del>) not allowed
+        assert FIXMsg.set_char(m, 13, 127) == -20
+
+        assert FIXMsg.set_char(m, 12, 20) == 1
+        assert FIXMsg.set_char(m, 15, 126) == 1
+
+        assert FIXMsg.get_char(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_char(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_char(m, 12)[0] == 20
+        assert FIXMsg.get_char(m, 15)[0] == 126
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'c') == 1
+        assert (<char *> value)[0] == 20
+        assert FIXMsg.get(m, 15, &value, &size, b'c') == 1
+        assert (<char *> value)[0] == 126
+
+
+    def test_getset_double(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef int i = 12
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'f'), 1, f'{i}')
+
+        assert FIXMsg.set_double(m, 12, 123.456) == 1
+        assert FIXMsg.get_double(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_double(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0    #ERR_NOT_FOUND
+        assert FIXMsg.get_double(m, 12)[0] == 123.456
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'f') == 1
+        assert (<double*>value)[0] == 123.456
+
+    def test_getset_timestamp(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        cdef long dt_now = datetime_nsnow()
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef int i = 12
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b't'), 1, f'{i}')
+
+        assert FIXMsg.set_utc_timestamp(m, 12, dt_now) == 1
+        assert FIXMsg.get_utc_timestamp(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_utc_timestamp(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_utc_timestamp(m, 12)[0] == dt_now
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b't') == 1
+        assert (<long *> value)[0] == dt_now
+
+
+    def test_getset_str(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef double i = 0
+        cdef char* test_s = b'123132213123'
+
+        # Empty strings are not allowed!
+        assert m.header.tag_errors == 0
+        self.assertEqual(FIXMsg.set_str(m, 12, b'', 0), -20)
+        assert m.header.tag_errors == 1
+
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(double), b's'), -20, f'{i}')
+        self.assertEqual(FIXMsg.set(m, 11, &test_s, strlen(test_s), b's'), -20, f'{i}')
+        assert m.header.tag_errors == 3
+
+        self.assertEqual(FIXMsg.set_str(m, 13, b'abc', 0), 1)
+        assert FIXMsg.set_str(m, 14, b'a', 3) == -20 # ERR_UNEXPECTED_TYPE_SIZE
+        assert FIXMsg.set_str(m, 15, test_s, 3) == -20
+        assert FIXMsg.set_str(m, 16, b'dfe', 3) == 1
+
+        assert FIXMsg.get_str(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_str(m, 17) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_str(m, 12) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+
+        assert FIXMsg.get_str(m, 13) != NULL
+        self.assertEqual(FIXMsg.get_last_error(m, ), 1)
+        assert FIXMsg.get_str(m, 16) != NULL
+        assert strcmp(FIXMsg.get_str(m, 13), b'abc') == 0
+        assert strcmp(FIXMsg.get_str(m, 16), b'dfe') == 0
+
+        assert FIXMsg.get(m, 16, &value, &size, b's') == 1
+        assert strcmp((<char *> value), b'dfe') == 0
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+    def test_get_last_error(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+        self.assertEqual(FIXMsg.get_last_error_str(m, 1),  b'No error')
+        self.assertEqual(FIXMsg.get_last_error_str(m, 0),  b'Not found')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -1), b'Duplicated tag')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -2), b'Tag type mismatch')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -3), b'Value size exceeds 1024 limit')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -4), b'FIX(35) tag or type value is not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -5), b'FIX tag=0 is not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -6), b'FIX tag>=65525 or message capacity overflow')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -7), b'System memory error when resizing the message')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -8), b'You must finish the started group before using other methods')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -9), b'Group with zero members are not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -10), b'Group member tag is a duplicate with other tags added to message')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -11), b'You must call group_start() before adding group members')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -12), b'group_tag must match to the tag of the group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -13), b'Too many tags in the group, max 127 allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -14), b'You must always add the first group item with the first tag in the group tag list')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -15), b'Group element is out of bounds, given at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -16), b'Group member `tag` in not in tag list at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -17), b'Trying to finish group with incomplete elements count added, as expected at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -18), b'You must add group tags in the same order as tag groups at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -19), b'Group data is corrupted')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -20), b'Tag actual value or size does not match expected type size/value boundaries')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -21), b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -22), b'Message is read-only')
+        self.assertEqual(FIXMsg.get_last_error_str(m, -23), b'unknown error code')
+
+    def test_fix_group_sample(self):
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 10)
+        cdef uint16_t n_elements = 5
+
+        cdef int i = 123
+        cdef double f = 8907.889
+        cdef char c = b'V'
+        cdef char * s = b'my fancy string, it may be too long!'
+
+        assert FIXMsg.group_start(m, 100, n_elements, 4,  [10, 11, 12, 13]) == 1
+        for k in range(n_elements):
+            # start_tag is mandatory! TAG ORDER MATTERS!
+            self.assertEqual(FIXMsg.group_add_tag(m, 100, 10, &i, sizeof(int), b'i'), 1)
+            self.assertEqual(FIXMsg.group_add_tag(m, 100, 11, &f, sizeof(double), b'f'), 1)
+            # Other tags may be omitted or optional
+            #FIXMsg.group_add_tag(m, 100, 12, &c, sizeof(char), b'c')
+            self.assertEqual(FIXMsg.group_add_tag(m, 100, 13, s, strlen(s) + 1, b's'), 1)
+        self.assertEqual(FIXMsg.group_finish(m, 100), 1)
+
+        assert FIXMsg.group_count(m, 100) == 5
+
+        FIXMsg.destroy(m)

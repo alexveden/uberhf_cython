@@ -95,6 +95,73 @@ cdef class FIXMsg:
             free(self)
 
     @staticmethod
+    cdef int get_last_error(FIXMsgStruct * self) nogil:
+        """
+        Last error returned by primitive type get operation
+        :return: 
+        """
+        return self.header.last_error
+
+    @staticmethod
+    cdef const char * get_last_error_str(FIXMsgStruct * self, int e) nogil:
+        """
+        Return test error for each of error codes returned by get/set functions
+
+        :param e: if > 0 - not an error! 
+        :return: char*
+        """
+        if e > 0:
+            return b'No error'
+        elif e == ERR_NOT_FOUND:
+            return b'Not found'
+        elif e == ERR_FIX_DUPLICATE_TAG:
+            return b'Duplicated tag'
+        elif e == ERR_FIX_TYPE_MISMATCH:
+            return b'Tag type mismatch'
+        elif e == ERR_FIX_VALUE_TOOLONG:
+            return b'Value size exceeds 1024 limit'
+        elif e == ERR_FIX_NOT_ALLOWED:
+            return b'FIX(35) tag or type value is not allowed'
+        elif e == ERR_FIX_ZERO_TAG:
+            return b'FIX tag=0 is not allowed'
+        elif e == ERR_DATA_OVERFLOW:
+            return b'FIX tag>=65525 or message capacity overflow'
+        elif e == ERR_MEMORY_ERROR:
+            return b'System memory error when resizing the message'
+        elif e == ERR_GROUP_NOT_FINISHED:
+            return b'You must finish the started group before using other methods'
+        elif e == ERR_GROUP_EMPTY:
+            return b'Group with zero members are not allowed'
+        elif e == ERR_GROUP_DUPLICATE_TAG:
+            return b'Group member tag is a duplicate with other tags added to message'
+        elif e == ERR_GROUP_NOT_STARTED:
+            return b'You must call group_start() before adding group members'
+        elif e == ERR_GROUP_NOT_MATCH:
+            return b'group_tag must match to the tag of the group_start()'
+        elif e == ERR_GROUP_TOO_MANY:
+            return b'Too many tags in the group, max 127 allowed'
+        elif e == ERR_GROUP_START_TAG_EXPECTED:
+            return b'You must always add the first group item with the first tag in the group tag list'
+        elif e == ERR_GROUP_EL_OVERFLOW:
+            return b'Group element is out of bounds, given at group_start()'
+        elif e == ERR_GROUP_TAG_NOT_INGROUP:
+            return b'Group member `tag` in not in tag list at group_start()'
+        elif e == ERR_GROUP_NOT_COMPLETED:
+            return b'Trying to finish group with incomplete elements count added, as expected at group_start()'
+        elif e == ERR_GROUP_TAG_WRONG_ORDER:
+            return b'You must add group tags in the same order as tag groups at group_start()'
+        elif e == ERR_GROUP_CORRUPTED:
+            return b'Group data is corrupted'
+        elif e == ERR_UNEXPECTED_TYPE_SIZE:
+            return b'Tag actual value or size does not match expected type size/value boundaries'
+        elif e == ERR_RESIZE_REQUIRED:
+            return b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity'
+        elif e == ERR_DATA_READ_ONLY:
+            return b'Message is read-only'
+
+        return b'unknown error code'
+
+    @staticmethod
     cdef bint is_valid(FIXMsgStruct * self) nogil:
         """
         Check is binary message is valid
@@ -534,25 +601,27 @@ cdef class FIXMsg:
         Initializes fix group
 
         Example:
-            m = FIXBinaryMsg(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
+            m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 10)
             cdef uint16_t n_elements = 5
-
+    
             cdef int i = 123
             cdef double f = 8907.889
             cdef char c = b'V'
             cdef char * s = b'my fancy string, it may be too long!'
-
-            assert m.group_start(100, n_elements, 4,  [10, 11, 12, 13]) == 1
+    
+            assert FIXMsg.group_start(m, 100, n_elements, 4,  [10, 11, 12, 13]) == 1
             for k in range(n_elements):
                 # start_tag is mandatory! TAG ORDER MATTERS!
-                m.group_add_tag(100, 10, &i, sizeof(int), b'i')
-                m.group_add_tag(100, 11, &f, sizeof(double), b'f')
-                #   Other tags may be omitted or optional
-                #   m.group_add_tag(100, 12, &c, sizeof(char), b'c')
-                m.group_add_tag(100, 13, s, strlen(s) + 1, b's')
-            assert m.group_finish(100) == 1
-
-            assert m.group_count(100) == 5
+                FIXMsg.group_add_tag(m, 100, 10, &i, sizeof(int), b'i')
+                FIXMsg.group_add_tag(m, 100, 11, &f, sizeof(double), b'f')
+                # Other tags may be omitted or optional
+                #FIXMsg.group_add_tag(m, 100, 12, &c, sizeof(char), b'c')
+                FIXMsg.group_add_tag(m, 100, 13, s, strlen(s) + 1, b's')
+            assert FIXMsg.group_finish(m, 100) == 1
+    
+            assert FIXMsg.group_count(m, 100) == 5
+    
+            FIXMsg.destroy(m)
 
 
         :param group_tag: unique group tag 
@@ -968,3 +1037,222 @@ cdef class FIXMsg:
             return ERR_GROUP_CORRUPTED
 
         return rec.grp_n_elements
+
+    #
+    #  Primitive type getters / setters
+    #
+    #
+    @staticmethod
+    cdef int set_int(FIXMsgStruct * self, uint16_t tag, int value) nogil:
+        """
+        Set signed integer tag
+
+        :param tag: any valid tag
+        :param value: any integer value
+        :return: positive on success, negative on error
+        """
+        return FIXMsg.set(self, tag, &value, sizeof(int), b'i')
+
+    @staticmethod
+    cdef int * get_int(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get signed integer tag
+
+        :param tag: any valid tag
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'i')
+        if rc > 0 and size == sizeof(int):
+            return <int *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_bool(FIXMsgStruct * self, uint16_t tag, bint value) nogil:
+        """
+        Set boolean
+
+        :param tag: any valid tag
+        :param value: must be 0 or 1
+        :return: positive on success, negative on error
+        """
+        if value != 0 and value != 1:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        cdef char v = <char> value
+        return FIXMsg.set(self, tag, &v, sizeof(char), b'b')
+
+    @staticmethod
+    cdef int8_t * get_bool(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get boolean
+
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'b')
+        if rc > 0 and size == sizeof(char):
+            if (<int8_t*>value)[0] == 1 or (<int8_t*>value)[0] == 0:
+                return <int8_t *> value
+            else:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+                return NULL
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_char(FIXMsgStruct * self, uint16_t tag, char value) nogil:
+        """
+        Set char
+
+        :param tag: any valid tag
+        :param value: must be > 20 and < 127 (i.e. all printable chars are allowed)
+        :return: positive on success, negative on error
+        """
+        if value < 20 or value == 127:
+            # All negative and control ASCII char are not allowed
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+
+        return FIXMsg.set(self, tag, &value, sizeof(char), b'c')
+
+    @staticmethod
+    cdef char * get_char(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get char
+
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'c')
+        if rc > 0 and size == sizeof(char):
+            return <char *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_double(FIXMsgStruct * self, uint16_t tag, double value) nogil:
+        """
+        Set floating point number (type double)
+
+        :param tag: any valid tag
+        :param value: any double value
+        :return: positive on success, negative on error
+        """
+        return FIXMsg.set(self, tag, &value, sizeof(double), b'f')
+
+    @staticmethod
+    cdef double * get_double(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get double tag
+
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'f')
+        if rc > 0 and size == sizeof(double):
+            return <double *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_utc_timestamp(FIXMsgStruct * self, uint16_t tag, long value_ns) nogil:
+        """
+        Set UTC timestamp as nanoseconds since epoch (long)
+
+        :param tag: any valid tag
+        :param value_ns: nanoseconds since epoch
+        :return: positive on success, negative on error
+        """
+        return FIXMsg.set(self, tag, &value_ns, sizeof(long), b't')
+
+    @staticmethod
+    cdef long * get_utc_timestamp(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Gets UTC timestamp as nanoseconds since epoch
+
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b't')
+        if rc > 0 and size == sizeof(long):
+            return <long *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_str(FIXMsgStruct * self, uint16_t tag, char *value, uint16_t length) nogil:
+        """
+        Set string field
+
+        :param tag: any valid tag
+        :param value: any string of length > 0 and < 1024
+        :param length: string length (without \0 char, i.e. length of 'abc' == 3),
+                       if length = 0, the function will use strlen(value)
+                       if length is known you should pass is for performance reasons
+        :return: positive on success, negative on error
+        """
+        if length == 0:
+            length = strlen(value)
+        if length == 0:
+            self.header.tag_errors += 1
+            return ERR_UNEXPECTED_TYPE_SIZE
+        return FIXMsg.set(self, tag, value, length + 1, b's')
+
+    @staticmethod
+    cdef char * get_str(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get string field
+
+        :param tag: any valid tag
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef char * result
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b's')
+        result = <char *> value
+        if rc > 0 and size > 1 and result[0] != b'\0':
+            return result
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
