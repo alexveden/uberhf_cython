@@ -103,7 +103,7 @@ cdef class FIXMsg:
         return self.header.last_error
 
     @staticmethod
-    cdef const char * get_last_error_str(FIXMsgStruct * self, int e) nogil:
+    cdef const char * get_last_error_str(int e) nogil:
         """
         Return test error for each of error codes returned by get/set functions
 

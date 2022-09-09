@@ -1775,31 +1775,31 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         # Exact match no resize
         cdef FIXMsgStruct * m
         m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
-        self.assertEqual(FIXMsg.get_last_error_str(m, 1),  b'No error')
-        self.assertEqual(FIXMsg.get_last_error_str(m, 0),  b'Not found')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -1), b'Duplicated tag')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -2), b'Tag type mismatch')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -3), b'Value size exceeds 1024 limit')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -4), b'FIX(35) tag or type value is not allowed')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -5), b'FIX tag=0 is not allowed')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -6), b'FIX tag>=65525 or message capacity overflow')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -7), b'System memory error when resizing the message')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -8), b'You must finish the started group before using other methods')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -9), b'Group with zero members are not allowed')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -10), b'Group member tag is a duplicate with other tags added to message')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -11), b'You must call group_start() before adding group members')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -12), b'group_tag must match to the tag of the group_start()')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -13), b'Too many tags in the group, max 127 allowed')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -14), b'You must always add the first group item with the first tag in the group tag list')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -15), b'Group element is out of bounds, given at group_start()')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -16), b'Group member `tag` in not in tag list at group_start()')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -17), b'Trying to finish group with incomplete elements count added, as expected at group_start()')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -18), b'You must add group tags in the same order as tag groups at group_start()')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -19), b'Group data is corrupted')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -20), b'Tag actual value or size does not match expected type size/value boundaries')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -21), b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -22), b'Message is read-only')
-        self.assertEqual(FIXMsg.get_last_error_str(m, -23), b'unknown error code')
+        self.assertEqual(FIXMsg.get_last_error_str(1),  b'No error')
+        self.assertEqual(FIXMsg.get_last_error_str(0),  b'Not found')
+        self.assertEqual(FIXMsg.get_last_error_str(-1), b'Duplicated tag')
+        self.assertEqual(FIXMsg.get_last_error_str(-2), b'Tag type mismatch')
+        self.assertEqual(FIXMsg.get_last_error_str(-3), b'Value size exceeds 1024 limit')
+        self.assertEqual(FIXMsg.get_last_error_str(-4), b'FIX(35) tag or type value is not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(-5), b'FIX tag=0 is not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(-6), b'FIX tag>=65525 or message capacity overflow')
+        self.assertEqual(FIXMsg.get_last_error_str(-7), b'System memory error when resizing the message')
+        self.assertEqual(FIXMsg.get_last_error_str(-8), b'You must finish the started group before using other methods')
+        self.assertEqual(FIXMsg.get_last_error_str(-9), b'Group with zero members are not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(-10), b'Group member tag is a duplicate with other tags added to message')
+        self.assertEqual(FIXMsg.get_last_error_str(-11), b'You must call group_start() before adding group members')
+        self.assertEqual(FIXMsg.get_last_error_str(-12), b'group_tag must match to the tag of the group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(-13), b'Too many tags in the group, max 127 allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(-14), b'You must always add the first group item with the first tag in the group tag list')
+        self.assertEqual(FIXMsg.get_last_error_str(-15), b'Group element is out of bounds, given at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(-16), b'Group member `tag` in not in tag list at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(-17), b'Trying to finish group with incomplete elements count added, as expected at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(-18), b'You must add group tags in the same order as tag groups at group_start()')
+        self.assertEqual(FIXMsg.get_last_error_str(-19), b'Group data is corrupted')
+        self.assertEqual(FIXMsg.get_last_error_str(-20), b'Tag actual value or size does not match expected type size/value boundaries')
+        self.assertEqual(FIXMsg.get_last_error_str(-21), b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity')
+        self.assertEqual(FIXMsg.get_last_error_str(-22), b'Message is read-only')
+        self.assertEqual(FIXMsg.get_last_error_str(-23), b'unknown error code')
 
         FIXMsg.destroy(m)
 
@@ -1825,3 +1825,103 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.group_count(m, 100) == 5
 
         FIXMsg.destroy(m)
+
+
+    def test_check_set_offset(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 10)
+        assert m.header.tags_count == 0
+        assert m.header.tags_capacity == 10
+        assert m.tags != NULL
+
+        assert FIXMsg._set_tag_offset(m, 2, 20) == 0
+        assert m.tags[0].tag == 2
+        assert m.tags[0].data_offset == 20
+
+        assert FIXMsg._set_tag_offset(m, 3, 30) == 1
+        assert m.tags[0].tag == 2
+        assert m.tags[0].data_offset == 20
+        assert m.tags[1].tag == 3
+        assert m.tags[1].data_offset == 30
+
+
+        assert FIXMsg._set_tag_offset(m, 1, 10) == 0
+        assert m.tags[0].tag == 1
+        assert m.tags[0].data_offset == 10
+        assert m.tags[1].tag == 2
+        assert m.tags[1].data_offset == 20
+        assert m.tags[2].tag == 3
+        assert m.tags[2].data_offset == 30
+
+        assert FIXMsg._set_tag_offset(m, 5, 50) == 3
+        assert m.tags[0].tag == 1
+        assert m.tags[0].data_offset == 10
+        assert m.tags[1].tag == 2
+        assert m.tags[1].data_offset == 20
+        assert m.tags[2].tag == 3
+        assert m.tags[2].data_offset == 30
+        assert m.tags[3].tag == 5
+        assert m.tags[3].data_offset == 50
+
+        assert FIXMsg._set_tag_offset(m, 4, 40) == 3
+
+        assert m.tags[0].tag == 1
+        assert m.tags[0].data_offset == 10
+        assert m.tags[1].tag == 2
+        assert m.tags[1].data_offset == 20
+        assert m.tags[2].tag == 3
+        assert m.tags[2].data_offset == 30
+        assert m.tags[3].tag == 4
+        assert m.tags[3].data_offset == 40
+        assert m.tags[4].tag == 5
+        assert m.tags[4].data_offset == 50
+
+        assert FIXMsg._get_tag_offset(m, 1) == 10
+        assert FIXMsg._get_tag_offset(m, 2) == 20
+        assert FIXMsg._get_tag_offset(m, 3) == 30
+        assert FIXMsg._get_tag_offset(m, 4) == 40
+        assert FIXMsg._get_tag_offset(m, 5) == 50
+
+
+        FIXMsg.destroy(m)
+
+
+    def test_check_get_search(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 10)
+        assert m.header.tags_count == 0
+        assert m.header.tags_capacity == 10
+        assert m.tags != NULL
+        assert FIXMsg._get_tag_offset(m,  1) == USHRT_MAX
+
+        assert FIXMsg._set_tag_offset(m, 3, 10) == 0
+        assert FIXMsg._set_tag_offset(m, 5, 50) == 1
+        assert FIXMsg._set_tag_offset(m, 8, 100) == 2
+
+        assert FIXMsg._get_tag_offset(m,  2) == USHRT_MAX-1
+        assert FIXMsg._get_tag_offset(m,  3) == 10
+        assert FIXMsg._get_tag_offset(m,  4) == USHRT_MAX-1
+        assert FIXMsg._get_tag_offset(m,  5) == 50
+        assert FIXMsg._get_tag_offset(m,  6) == USHRT_MAX-1
+        assert FIXMsg._get_tag_offset(m,  8) == 100
+        assert FIXMsg._get_tag_offset(m,  9) == USHRT_MAX-1
+        assert FIXMsg._get_tag_offset(m,  100) == USHRT_MAX-1
+
+    def test_check_get_search(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 100)
+
+        # Fill sequential
+        for i in range(10, 90):
+            if i % 2 == 0:
+                rc = FIXMsg._set_tag_offset(m, i + 1, i)
+                assert rc < USHRT_MAX - 10, f'i={i}, rc={rc}'
+
+        assert m.header.tags_count == 40, m.header.tags_count
+        # for i in range(m.header.tags_count):
+        #     #assert m.tags[i].tag > 10 and m.tags[i].tag <= 90
+        #     #assert m.tags[i].tag > 10 and m.tags[i].tag <= 90
+        #     print(f'tag={m.tags[i].tag} data_offset={m.tags[i].data_offset}')
+
+        for i in range(100):
+            if i % 2 == 0 and i >= 10 and i < 90:
+                assert FIXMsg._get_tag_offset(m, i + 1) == i, f'{FIXMsg._get_tag_offset(m, i + 1)} != {i}'
+            else:
+                assert (FIXMsg._get_tag_offset(m, i + 1) == 65534), i  #DEF TAG_NOT_FOUND = 	65534 # USHRT_MAX-1

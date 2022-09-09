@@ -1,5 +1,5 @@
 from libc.stdint cimport uint16_t
-
+from uberhf.orders.fix_msg cimport FIXMsg, FIXMsgStruct
 cdef extern from *:
     """
     /* This code is a fast implementation of ceil((x+y)/2) */
@@ -231,19 +231,23 @@ cpdef main():
 
     cdef FIXTagBinaryTree * tag_tree = binary_tree_create(100)
     cdef FIXTagBinaryTree * tag_tree_rnd = binary_tree_create(100)
-
+    cdef FIXMsgStruct * m = FIXMsg.create(b'T', 20000, 110)
+    cdef FIXMsgStruct * m_rnd = FIXMsg.create(b'T', 20000, 110)
 
     py_dict = {}
     # Fill sequential
     for i in range(10, 90):
         if i % 2 == 0:
             assert binary_tree_set_offset(tag_tree, i+1,  i) < USHRT_MAX-10
+            rc = FIXMsg._set_tag_offset(m, i + 1, i)
+            assert rc < USHRT_MAX - 10, f'i={i}, rc={rc}'
             py_dict[i+1] = i
+    assert FIXMsg.is_valid(m) == 1
 
     # Fill random
     for i in range(100):
         assert binary_tree_set_offset(tag_tree_rnd, rnd_array[i], rnd_array[i]) < USHRT_MAX - 10
-
+        assert FIXMsg._set_tag_offset(m_rnd, rnd_array[i], rnd_array[i]) < USHRT_MAX - 10
 
     cdef int n_steps = 100000
 
@@ -299,6 +303,20 @@ cpdef main():
     t_end = time.time()
     duration = t_end - t_start
     print(f'binary_tree_get_offset (prod func) speed: {n_steps / duration} iter/sec')
+
+    t_start = time.time()
+    assert m.header.tags_count > 0
+    for j in range(n_steps):
+        for i in range(100):
+            if i % 2 == 0 and i >= 10 and i < 90:
+                assert FIXMsg._get_tag_offset(m, i + 1) == i, f'{FIXMsg._get_tag_offset(m, i + 1)} != {i}'
+            else:
+                assert (FIXMsg._get_tag_offset(m, i + 1) == RESULT_NOT_FOUND), i
+
+    t_end = time.time()
+    duration = t_end - t_start
+    print(f'binary_tree_get_offset (FIXMsg.static) speed: {n_steps / duration} iter/sec')
+
 
 
     t_start = time.time()
@@ -356,6 +374,17 @@ cpdef main():
     t_end = time.time()
     duration = t_end - t_start
     print(f'binary_tree_get_offset (prod func) speed: {n_steps / duration} iter/sec')
+
+    t_start = time.time()
+    last_tag = 0
+    last_tag_idx = USHRT_MAX
+    for j in range(n_steps):
+        for i in range(100):
+            assert FIXMsg._get_tag_offset(m_rnd, rnd_array[i]) == rnd_array[i]
+
+    t_end = time.time()
+    duration = t_end - t_start
+    print(f'binary_tree_get_offset (FIXMsg.static) speed: {n_steps / duration} iter/sec')
 
     ################################################################################
     #  SAME TAG

@@ -91,7 +91,7 @@ cdef class FIXMsg:
     cdef int get_last_error(FIXMsgStruct * self) nogil
 
     @staticmethod
-    cdef const char * get_last_error_str(FIXMsgStruct * self, int e) nogil
+    cdef const char * get_last_error_str(int e) nogil
 
     @staticmethod
     cdef bint is_valid(FIXMsgStruct * self) nogil
