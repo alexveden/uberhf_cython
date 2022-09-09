@@ -1614,6 +1614,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert FIXMsg.get(m, 12, &value, &size, b'i') == 1
         assert (<int*>value)[0] == 123
+        FIXMsg.destroy(m)
 
 
     def test_getset_bool(self):
@@ -1640,6 +1641,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert FIXMsg.get(m, 12, &value, &size, b'b') == 1
         assert (<int8_t *> value)[0] == 1
+        FIXMsg.destroy(m)
 
     def test_getset_char(self):
         # Exact match no resize
@@ -1674,6 +1676,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert (<char *> value)[0] == 20
         assert FIXMsg.get(m, 15, &value, &size, b'c') == 1
         assert (<char *> value)[0] == 126
+        FIXMsg.destroy(m)
 
 
     def test_getset_double(self):
@@ -1697,6 +1700,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert FIXMsg.get(m, 12, &value, &size, b'f') == 1
         assert (<double*>value)[0] == 123.456
+        FIXMsg.destroy(m)
 
     def test_getset_timestamp(self):
         # Exact match no resize
@@ -1721,6 +1725,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert FIXMsg.get(m, 12, &value, &size, b't') == 1
         assert (<long *> value)[0] == dt_now
+        FIXMsg.destroy(m)
 
 
     def test_getset_str(self):
@@ -1764,6 +1769,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.get(m, 16, &value, &size, b's') == 1
         assert strcmp((<char *> value), b'dfe') == 0
         assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+        FIXMsg.destroy(m)
 
     def test_get_last_error(self):
         # Exact match no resize
@@ -1794,6 +1800,8 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.get_last_error_str(m, -21), b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity')
         self.assertEqual(FIXMsg.get_last_error_str(m, -22), b'Message is read-only')
         self.assertEqual(FIXMsg.get_last_error_str(m, -23), b'unknown error code')
+
+        FIXMsg.destroy(m)
 
     def test_fix_group_sample(self):
         m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 200, 10)
