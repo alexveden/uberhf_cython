@@ -1348,6 +1348,69 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         FIXMsg.destroy(m)
 
 
+    def test_groups_resize_and_tags(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef FIXMsgStruct * m_tmp
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20, 100)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
+
+        cdef void* value
+        cdef uint16_t value_size
+        cdef int t = 1
+        cdef uint16_t g_tags[4]
+
+        cdef int i = 123
+        cdef double f = 8907.889
+        cdef char c = b'V'
+        cdef char * s = b'my fancy string, it may be too long!'
+
+        cdef int n_elements = 5
+        while t < 100:
+
+            if t % 10 == 0:
+                g_tags[0] = t + 1
+                g_tags[1] = t + 3
+                g_tags[2] = t + 5
+                g_tags[3] = t + 7
+                has_resize = False
+                self.assertEqual(FIXMsg.group_start(m, t, n_elements, 4, g_tags), 1)
+                for k in range(n_elements):
+                    rc = FIXMsg.group_add_tag(m, t, t + 1, &i, sizeof(int), b'i')
+
+                    if rc == -21:
+                        m_tmp = FIXMsg.resize(m, 1, USHRT_MAX-m.header.data_size)
+                        assert m_tmp != NULL, f'tags={m.header.tags_count} data={m.header.data_size} lastpos={m.header.last_position}'
+                        m = m_tmp
+                        rc = FIXMsg.group_add_tag(m, t, t + 1, &i, sizeof(int), b'i')
+                        has_resize = True
+                    self.assertEqual(rc, 1, f't={t} k={k} has_resize={has_resize}')
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 3, &f, sizeof(double), b'f'), 1)
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 5, &c, sizeof(char), b'c'), 1)
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 7, s, strlen(s)+1, b's'), 1, f'k={k}')
+                self.assertEqual(FIXMsg.group_finish(m, t), 1, f't={t} k={k}')
+                assert FIXMsg.is_valid(m) == 1
+                self.assertEqual(FIXMsg.group_count(m, t), n_elements, f'has_resize={has_resize}')
+
+                for k in range(n_elements):
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 1, &value, &value_size, b'i'), 1,
+                                     f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert (<int *> value)[0] == i
+                    assert value_size == sizeof(int)
+
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 7, &value, &value_size, b's'), 1, f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert value_size == strlen(s) + 1
+                    #cybreakpoint(strcmp((<char *> value), s) != 0)
+                    assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
+
+                t += 10
+            else:
+                FIXMsg.set(m, t, &t, sizeof(int), b'i')
+                t += 1
+        assert FIXMsg.is_valid(m) == 1
+        FIXMsg.destroy(m)
+
     def test_groups_resize_and_multi_types(self):
         # Exact match no resize
         cdef FIXMsgStruct * m

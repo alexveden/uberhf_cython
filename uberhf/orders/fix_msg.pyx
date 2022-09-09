@@ -60,9 +60,8 @@ cdef class FIXMsg:
 
         if self == NULL:
             return NULL
-        # Tag index pointer
-        self.tags = _calc_offset_tags(self)
-
+        # Tag data pointer
+        self.values = _calc_offset_values(self)
         self.open_group = NULL
         self.header.magic_number = FIX_MAGIC
         self.header.msg_type = msg_type
@@ -78,9 +77,8 @@ cdef class FIXMsg:
         self.header.tags_last = 0
         self.header.tags_last_idx = UCHAR_MAX
 
-        # Tag data pointer (MUST BE AFTER HEADER INITIALIZED!)
-        self.values = _calc_offset_values(self)
-
+        # Tag index pointer (MUST BE AFTER HEADER INITIALIZED!)
+        self.tags = _calc_offset_tags(self)
 
         # Put magic number between tag index and values starting point, to make sure that resizing of tags doesn't affect the integrity
         cdef uint16_t * magic_middle = _calc_offset_magic_middle(self)
@@ -293,6 +291,16 @@ cdef class FIXMsg:
         if (UCHAR_MAX - self.header.tags_capacity) < add_tags:
             self.header.last_position = USHRT_MAX
             return NULL
+        if add_tags == 0 and add_values_size == 0:
+            return NULL
+
+        cdef uint16_t * magic_middle = _calc_offset_magic_middle(self)
+        cdef uint16_t * magic_end = _calc_offset_magic_end(self)
+        # Corrupted data integrity skip!
+        if magic_middle[0] != FIX_MAGIC:
+            return NULL
+        if magic_end[0] != FIX_MAGIC:
+            return NULL
 
         # Resize to extra_size + approx 10 double tags room
         cdef size_t new_size = self.header.data_size + add_values_size
@@ -309,7 +317,8 @@ cdef class FIXMsg:
             open_group_offset = <void *> self.open_group - self.values
             open_group_tag = self.open_group.fix_rec.tag
 
-        cdef int old_magic_middle_offset = (<void*>_calc_offset_magic_middle(self)) - (<void*>self)
+        cdef int old_magic_middle_offset = (<void*>magic_middle) - (<void*>self)
+        cdef int old_tags_length = (<void*>magic_end) - (<void*>magic_middle)
 
         # From `man 3 realloc`
         #    If realloc() fails, the original block is left untouched; it is not freed or moved
@@ -320,13 +329,14 @@ cdef class FIXMsg:
             self.header.last_position = USHRT_MAX
             return NULL
 
-        new_self.tags = _calc_offset_tags(new_self)
 
-        if add_tags > 0:
-            # Tags capacity has changed let's move memory
-            memmove(<void*> new_self + old_magic_middle_offset + add_tags*sizeof(FIXOffsetMap),
+        cdef uint16_t add_tags_offset = add_tags*sizeof(FIXOffsetMap)
+
+        if new_size > 0:
+            # To increase size capacity we need to move block of memory from magic middle + new_size bytes
+            memmove(<void*> new_self + old_magic_middle_offset + add_values_size,
                     <void*> new_self + old_magic_middle_offset,
-                    new_size + sizeof(uint16_t)*2 , # Include also size of 2 magic fields
+                    old_tags_length
                     )
 
         new_self.values = _calc_offset_values(new_self)
@@ -334,19 +344,23 @@ cdef class FIXMsg:
         new_self.header.n_reallocs += 1
         new_self.header.tags_capacity = new_tags
 
-        cdef uint16_t * magic_middle = _calc_offset_magic_middle(new_self)
-        cdef uint16_t * magic_end = _calc_offset_magic_end(new_self)
+        # Tags must be updated after header changed
+        new_self.tags = _calc_offset_tags(new_self)
+
+        magic_middle = _calc_offset_magic_middle(new_self)
+        magic_end = _calc_offset_magic_end(new_self)
 
         # Magic middle should be in place
         cyassert(magic_middle[0] == FIX_MAGIC)
 
-        # Make sure after tags capacity change without value size the magic_end is valid
-        cyassert(add_values_size != 0 or magic_end[0] == FIX_MAGIC)
+        # # Make sure after tags capacity change without value size the magic_end is valid
+        # cyassert(add_tags == 0 or magic_end[0] == FIX_MAGIC)
 
         # Set magic end because of data resize
         magic_end[0] = FIX_MAGIC
 
         if open_group_offset != -1:
+            # Algo don't forget to align by new tags added
             new_self.open_group = <FIXGroupRec *> (new_self.values + open_group_offset)
             cyassert(new_self.open_group.fix_rec.tag == open_group_tag)
             cyassert(new_self.open_group.fix_rec.value_type == b'\x07')

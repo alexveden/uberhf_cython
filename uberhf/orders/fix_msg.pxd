@@ -47,37 +47,37 @@ ctypedef struct FIXMsgStruct:
 
 cdef inline size_t _calc_data_size(uint16_t data_size, uint8_t tag_tree_capacity) nogil:
     return (sizeof(FIXMsgStruct) +                      # Header
-            sizeof(FIXOffsetMap) * tag_tree_capacity +  # Tag index
+            data_size +                                 # self.values
             sizeof(uint16_t) +                          # Magic middle
-            data_size +                                 # Data
+            sizeof(FIXOffsetMap) * tag_tree_capacity +  # self.tags
             sizeof(uint16_t)                            # Magic end
             )
 
-cdef inline FIXOffsetMap* _calc_offset_tags(FIXMsgStruct * self) nogil:
-    return <FIXOffsetMap*> (<void *> self + sizeof(FIXMsgStruct))
+
+cdef inline void* _calc_offset_values(FIXMsgStruct * self) nogil:
+    return (<void *> self + sizeof(FIXMsgStruct))                 # Header
+
 
 cdef inline uint16_t * _calc_offset_magic_middle(FIXMsgStruct * self) nogil:
     return <uint16_t *>(<void*>self + sizeof(FIXMsgStruct) +              # Header
-                        sizeof(FIXOffsetMap) * self.header.tags_capacity  # Tag index
+                        self.header.data_size                             # self.values
                         )
 
-cdef inline void* _calc_offset_values(FIXMsgStruct * self) nogil:
-    return (<void *> self + sizeof(FIXMsgStruct) +                # Header
-            sizeof(FIXOffsetMap) * self.header.tags_capacity +    # Tag index
-            sizeof(uint16_t)                                      # Magic middle
-            )
+
+cdef inline FIXOffsetMap* _calc_offset_tags(FIXMsgStruct * self) nogil:
+    return <FIXOffsetMap*> (<void *> self + sizeof(FIXMsgStruct) +              # Header
+                            self.header.data_size   +                           # self.values
+                            sizeof(uint16_t)                                    # Magic middle
+                            )
+
 
 cdef inline uint16_t * _calc_offset_magic_end(FIXMsgStruct * self) nogil:
     return <uint16_t *> (<void *> self +
                          sizeof(FIXMsgStruct) +                              # Header
-                         sizeof(FIXOffsetMap) * self.header.tags_capacity +  # tag index
+                         self.header.data_size  +                            # self.values
                          sizeof(uint16_t) +                                  # Magic middle
-                         self.header.data_size                               # Data
+                         sizeof(FIXOffsetMap) * self.header.tags_capacity    # self.tags
                          )
-
-
-
-
 
 cdef class FIXMsg:
     @staticmethod
