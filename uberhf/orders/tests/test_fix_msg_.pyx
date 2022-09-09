@@ -17,6 +17,61 @@ from libc.limits cimport USHRT_MAX, UCHAR_MAX
 
 from uberhf.orders.fix_msg cimport FIXRec, FIXMsg, FIXMsgStruct, FIXHeader, FIXGroupRec, FIXOffsetMap
 
+
+cdef FIXMsgStruct * make_almost_overflowed(int n_bytes_remaining):
+    """
+    Makes FIXMsgStruct with 5 bytes left before overflow
+    :return: 
+    """
+    #cybreakpoint(1)
+    assert n_bytes_remaining <= 1000, 'Not implemented for large'
+    cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', USHRT_MAX, UCHAR_MAX)
+
+    assert m != NULL
+    assert m.header.data_size == USHRT_MAX
+    assert m.header.tags_capacity == UCHAR_MAX
+
+    cdef int i
+    cdef void * value
+    cdef uint16_t value_size
+    prev_last_position = 0
+
+    cdef uint16_t buf_size = 1024 - sizeof(FIXRec)  # Exact 1024 bytes with header
+    cdef char * val = <char *> malloc(buf_size)
+    memset(val, 98, buf_size)
+    val[buf_size - 1] = b'\0'
+    assert strlen(val) == buf_size - 1, strlen(val)
+
+    for i in range(0, USHRT_MAX):
+        if i == 0:
+            continue
+        elif i == 35:
+            continue
+        else:
+            if m.header.tags_count < 63:
+                assert FIXMsg.set(m, i, val, buf_size, b's') ==  1, f'{m.header.tags_count}'
+                assert FIXMsg.get(m, i, &value, &value_size, b's') ==  1, f'{i}'
+                assert value_size == buf_size
+                assert strcmp(val, <char *> value) == 0
+                assert m.header.last_position > prev_last_position, i
+                assert FIXMsg.is_valid(m) == 1, i
+            else:
+                break
+
+    # No bytes left in the buffer
+    assert m.header.data_size, USHRT_MAX
+    assert m.header.last_position, 64512
+
+    #
+    # Make string shorter
+    val[buf_size - 1 - n_bytes_remaining - 1] = b'\0'
+    assert FIXMsg.set(m, 100, val, strlen(val) + 1, b's') == 1, f'{m.header.tags_count}'  # OK
+    assert m.header.last_position, 65531  # Real bytes written
+    free(val)
+    #cybreakpoint(1)
+    return m
+
+
 class CyFIXStaticMsgTestCase(unittest.TestCase):
     def test_size_of_structs(self):
         self.assertEqual(18, sizeof(FIXHeader))
@@ -554,6 +609,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert fix_data_el_offsets[1] == USHRT_MAX
 
         assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
 
 
     def test_group_add_tag(self):
@@ -630,6 +686,8 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
                 self.assertEqual(FIXMsg.group_get(m, 10, j, i, &val_data, &val_size, b'i'), 1, f'i={i} j={j}')
                 assert (<int*>val_data)[0] == val
 
+        FIXMsg.destroy(m)
+
     def test_group_finish(self):
         # Exact match no resize
         cdef FIXMsgStruct * m
@@ -678,6 +736,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.open_group == NULL
 
         self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), 1, f'i={i}')
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__already_started(self):
         # Exact match no resize
@@ -688,6 +747,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__already_started(self):
         # Exact match no resize
@@ -698,6 +758,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 2, 3, [1, 3, 4]), -8) # ERR_GROUP_NOT_FINISHED
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__empty_group(self):
         # Exact match no resize
@@ -708,6 +769,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 0, [1, 3, 4]), -9)  #ERR_GROUP_EMPTY
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__too_many_tags(self):
         # Exact match no resize
@@ -717,6 +779,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 127, [1, 3, 4]), -13) #ERR_GROUP_TOO_MANY
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__duplicate_tag_global_fixgrp(self):
         # Exact match no resize
@@ -728,6 +791,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -1) #ERR_FIX_DUPLICATE_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__duplicate_tag_global(self):
         # Exact match no resize
@@ -739,6 +803,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [1, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__duplicate_tag_group(self):
         # Exact match no resize
@@ -749,6 +814,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [10, 3, 4]), -10) #ERR_GROUP_DUPLICATE_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__duplicate_tag_members(self):
         # Exact match no resize
@@ -759,6 +825,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 10, 1, 3, [3, 3, 4]), -10)  #ERR_GROUP_DUPLICATE_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_start_errors__tag_zero(self):
         # Exact match no resize
@@ -770,6 +837,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_start(m, 1, 1, 3, [0, 3, 4]), -5)  #ERR_FIX_ZERO_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_errors__not_started(self):
         # Exact match no resize
@@ -780,6 +848,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -11) # ERR_GROUP_NOT_STARTED
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
 
     def test_group_add_tag_errors__grp_not_match(self):
@@ -792,6 +861,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 11, 1, &a, sizeof(int), b'i'), -12) # ERR_GROUP_NOT_MATCH
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_errors__start_tag_expected(self):
         # Exact match no resize
@@ -803,6 +873,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -14) # ERR_GROUP_START_TAG_EXPECTED
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_errors__elements_overflow(self):
         # Exact match no resize
@@ -815,6 +886,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, sizeof(int), b'i'), -15) # ERR_GROUP_EL_OVERFLOW
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
 
     def test_group_add_tag_errors__tag_not_in_group(self):
@@ -828,6 +900,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 7, &a, sizeof(int), b'i'), -16) # ERR_GROUP_TAG_NOT_INGROUP
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_errors__tag_wrong_order_and_duplicates(self):
         # Exact match no resize
@@ -843,6 +916,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_errors__tag_wrong_order_and_duplicates_2nd_grp(self):
         # Exact match no resize
@@ -862,6 +936,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 3, &a, sizeof(int), b'i'), -18)  # ERR_GROUP_TAG_WRONG_ORDER
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_zero(self):
         # Exact match no resize
@@ -874,6 +949,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 0, 1, &a, sizeof(int), b'i'), -5)  # ERR_FIX_ZERO_TAG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_too_long(self):
         # Exact match no resize
@@ -885,6 +961,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 1025, b'i'), -3) # ERR_FIX_VALUE_TOOLONG
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_size_zero(self):
         # Exact match no resize
@@ -896,6 +973,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &a, 0, b'i'), -20)# ERR_UNEXPECTED_TYPE_SIZE
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_add_tag_string_length_mismatch(self):
         # Exact match no resize
@@ -907,9 +985,12 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
         self.assertEqual(FIXMsg.group_start(m, 10, 2, 4, [1, 2, 3, 4]), 1)
         cdef char * s = b'12345'
-        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &s, strlen(s), b's'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        # This is not reliable test!
+        #self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, &s, strlen(s), b's'), -20)# ERR_UNEXPECTED_TYPE_SIZE
+        self.assertEqual(FIXMsg.group_add_tag(m, 10, 1, s, strlen(s), b's'), -20)  # ERR_UNEXPECTED_TYPE_SIZE
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
 
     def test_group_add_tag_type_not_allowed(self):
@@ -923,6 +1004,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_add_tag(m, 10, 2, &a, sizeof(int), b'\x07'), -4)  # ERR_FIX_NOT_ALLOWED
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_finish_errors(self):
         # Exact match no resize
@@ -958,6 +1040,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert m.header.tag_errors > 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__not_finished(self):
         # Exact match no resize
@@ -977,6 +1060,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
             self.assertEqual(FIXMsg.group_count(m, 10), -8) # ERR_GROUP_NOT_FINISHED
         assert m.header.tag_errors == 0
         assert FIXMsg.is_valid(m, ) == 0  # Had errors
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__not_found(self):
         # Exact match no resize
@@ -1000,6 +1084,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_get(m, 101, 0, 1, &val_data, &val_size, b'i'), 0) # ERR_NOT_FOUND
 
         self.assertEqual(FIXMsg.group_count(m, 101), 0)  # ERR_NOT_FOUND
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__duplicate_tag_or_overflow(self):
         # Exact match no resize
@@ -1030,6 +1115,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_get(m, USHRT_MAX-10, 0, 1, &val_data, &val_size, b'i'), -6)  # ERR_DATA_OVERFLOW
 
         assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__tag_zero_or_not_allowed(self):
         # Exact match no resize
@@ -1059,6 +1145,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         # Read operation doesn't trigger msg corruption!
         assert FIXMsg.is_valid(m, ) == 1
+        FIXMsg.destroy(m)
 
 
     def test_group_get_errors__fix_rec_type_mismach(self):
@@ -1088,6 +1175,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
         assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
 
 
     def test_group_get_errors__el_out_of_bounds(self):
@@ -1111,6 +1199,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.group_finish(m, 10) == 1
 
         self.assertEqual(FIXMsg.group_get(m, 10, 2, 1, &val_data, &val_size, b'i'), -15)  # ERR_GROUP_EL_OVERFLOW
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__tag_type_mismatch(self):
         # Exact match no resize
@@ -1133,6 +1222,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.group_finish(m, 10) == 1
 
         self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'c'), -2)  # ERR_FIX_TYPE_MISMATCH
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__tag_not_in_group(self):
         # Exact match no resize
@@ -1155,6 +1245,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.group_finish(m, 10) == 1
 
         self.assertEqual(FIXMsg.group_get(m, 10, 0, 5, &val_data, &val_size, b'i'), -16)  # ERR_GROUP_TAG_NOT_INGROUP
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__tag_not_found(self):
         # Exact match no resize
@@ -1200,6 +1291,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
 
         assert val_data == NULL
         assert val_size == 0
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__corrupted_offset(self):
         # Exact match no resize
@@ -1225,6 +1317,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
         # Read operation doesn't trigger msg corruption! -- except ERR_GROUP_CORRUPTED
         assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
 
     def test_group_get_errors__corrupted_start_tag(self):
         # Exact match no resize
@@ -1252,242 +1345,190 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.group_get(m, 10, 0, 1, &val_data, &val_size, b'i'), -19)  # ERR_GROUP_CORRUPTED
 
         assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
 
 
-    # def test_groups_resize_and_multi_types(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20)
-    #     assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
-    #
-    #     cdef void* value
-    #     cdef uint16_t value_size
-    #     cdef int t = 1
-    #     cdef uint16_t g_tags[4]
-    #
-    #     cdef int i = 123
-    #     cdef double f = 8907.889
-    #     cdef char c = b'V'
-    #     cdef char * s = b'my fancy string, it may be too long!'
-    #
-    #     cdef int n_elements = 5
-    #     while t < 100:
-    #
-    #         if t % 10 == 0:
-    #             g_tags[0] = t + 1
-    #             g_tags[1] = t + 3
-    #             g_tags[2] = t + 5
-    #             g_tags[3] = t + 7
-    #
-    #             self.assertEqual(FIXMsg.group_start(m, t, n_elements, 4, g_tags), 1)
-    #             for k in range(n_elements):
-    #                 self.assertEqual(FIXMsg.group_add_tag(m, t, t + 1, &i, sizeof(int), b'i'), 1, f't={t} k={k}')
-    #                 self.assertEqual(FIXMsg.group_add_tag(m, t, t + 3, &f, sizeof(double), b'f'), 1)
-    #                 self.assertEqual(FIXMsg.group_add_tag(m, t, t + 5, &c, sizeof(char), b'c'), 1)
-    #                 self.assertEqual(FIXMsg.group_add_tag(m, t, t + 7, s, strlen(s)+1, b's'), 1, f'k={k}')
-    #             self.assertEqual(FIXMsg.group_finish(m, t), 1, f't={t} k={k}')
-    #
-    #             self.assertEqual(FIXMsg.group_count(m, t), n_elements)
-    #
-    #             for k in range(n_elements):
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 1, &value, &value_size, b'i'), 1,
-    #                                  f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
-    #                 assert (<int *> value)[0] == i
-    #                 assert value_size == sizeof(int)
-    #
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 7, &value, &value_size, b's'), 1, f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
-    #                 assert value_size == strlen(s) + 1
-    #                 #cybreakpoint(strcmp((<char *> value), s) != 0)
-    #                 assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
-    #
-    #             t += 10
-    #         else:
-    #             FIXMsg.set(m, t, &t, sizeof(int), b'i')
-    #             t += 1
-    #     # All should be valid
-    #     assert FIXMsg.is_valid(m, ) == 1
-    #     t = 1
-    #     while t < 100:
-    #         if t % 10 == 0:
-    #             for k in range(n_elements):
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 1, &value, &value_size, b'i'), 1, f't={t} k={k}')
-    #                 assert (<int*>value)[0] == i
-    #                 assert value_size == sizeof(int)
-    #
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 3, &value, &value_size, b'f'), 1)
-    #                 assert (<double *> value)[0] == f
-    #                 assert value_size == sizeof(double)
-    #
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 5, &value, &value_size, b'c'), 1)
-    #                 assert (<char *> value)[0] == c
-    #                 assert value_size == sizeof(char)
-    #
-    #                 self.assertEqual(FIXMsg.group_get(m, t, k, t + 7, &value, &value_size, b's'), 1, f'k={k}')
-    #                 assert value_size == strlen(s) + 1
-    #                 assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
-    #             t += 10
-    #         else:
-    #             self.assertEqual(FIXMsg.get(m, t, &value, &value_size, b'i'), 1, f't={t}' )
-    #             assert (<int *> value)[0] == t
-    #             assert value_size == sizeof(int)
-    #             t += 1
-    #
-    #     # All should be valid
-    #     assert FIXMsg.is_valid(m, ) == 1
-    #
-    # def test_group_overflow__group_start(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i, t, j
-    #     cdef int val
-    #
-    #     # Exclude zero tag error and tag 35 error
-    #     max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) + 1
-    #
-    #     for i in range(0, USHRT_MAX):
-    #         if i == 0:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
-    #         elif i == 35:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
-    #         else:
-    #             if i < max_records:
-    #                 self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), 1, f'{i}')
-    #             else:
-    #                 break
-    #
-    #     # No bytes left in the buffer
-    #     self.assertEqual(m.header.data_size, USHRT_MAX)
-    #     self.assertEqual(m.header.last_position, 65520)  # Real bytes written
-    #
-    #     self.assertEqual(FIXMsg.group_start(m, max_records + 10, 2, 3, [1, 3, 4]), -6)
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    # def test_group_overflow__group_add_tag(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i, t, j
-    #     cdef int val
-    #
-    #     # Exclude zero tag error and tag 35 error
-    #     max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
-    #
-    #
-    #     for i in range(0, USHRT_MAX):
-    #         if i == 0:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
-    #         elif i == 35:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
-    #         else:
-    #             if i < max_records:
-    #                 self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), 1, f'{i}')
-    #             else:
-    #                 break
-    #
-    #     # No bytes left in the buffer
-    #     self.assertEqual(sizeof(FIXGroupRec), 14)
-    #     self.assertEqual(m.header.data_size, 65450)
-    #     self.assertEqual(m.header.last_position,  65410)  # Real bytes written
-    #
-    #     # 125 bytes remaining to 65535
-    #     # Group start size = 26 bytes
-    #     self.assertEqual(FIXMsg.group_start(m, max_records + 10,
-    #                                    10,  # N elements
-    #                                    1,  # n - tags
-    #                                    [max_records + 11]),
-    #                      1)
-    #
-    #     # 99 bytes remaining for msg size (10 = FIXRec(6) + int(4))
-    #     for i in range(10):
-    #         if i < 8:
-    #             # Good
-    #             self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
-    #         else:
-    #             # Overflow!
-    #             self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), -6, f'i={i}')
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    #
-    # def test_group_overflow__group_finish(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i, t, j
-    #     cdef int val
-    #
-    #     # Exclude zero tag error and tag 35 error
-    #     max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
-    #
-    #     for i in range(0, USHRT_MAX):
-    #         if i == 0:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -5, f'{i}')  # ERR_FIX_ZERO_TAG
-    #         elif i == 35:
-    #             self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), -4, f'{i}')  # ERR_FIX_TAG35_NOTALLOWED
-    #         else:
-    #             if i < max_records:
-    #                 self.assertEqual(FIXMsg.set(m, i, &i, sizeof(int), b'i'), 1, f'{i}')
-    #             else:
-    #                 break
-    #
-    #     # No bytes left in the buffer
-    #     self.assertEqual(sizeof(FIXGroupRec), 14)
-    #     self.assertEqual(m.header.data_size, 65450)
-    #     self.assertEqual(m.header.last_position, 65410)  # Real bytes written
-    #
-    #     # 125 bytes remaining to 65535
-    #     # Group start size = 30 bytes
-    #     self.assertEqual(FIXMsg.group_start(m, max_records + 10,
-    #                                    8,  # N elements
-    #                                    5,  # n - tags
-    #                                    # Tags must be unique
-    #                                    [max_records + 11,
-    #                                     max_records + 12,
-    #                                     max_records + 13,
-    #                                     max_records + 14,
-    #                                     max_records + 15
-    #                                     ]),
-    #                      1)
-    #
-    #     # 95 bytes remaining for msg size (10 = FIXRec(6) + int(4))
-    #     for i in range(8):
-    #         self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
-    #
-    #     # No room for extra FIXRec(6) bytes, overflow
-    #     self.assertEqual(FIXMsg.group_finish(m, max_records + 10), -6)
-    #
-    #     self.assertEqual(FIXMsg.group_count(m, max_records + 10), -6) # ERR_DATA_OVERFLOW
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
-    # def test_group_count_errors(self):
-    #     # Exact match no resize
-    #     cdef FIXMsgStruct * m
-    #
-    #     m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000)
-    #
-    #     cdef int i  = 0
-    #     cdef int val
-    #
-    #     # Exclude zero tag error and tag 35 error
-    #     max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
-    #
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'i'), 1, f'{i}')
-    #     self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'i'), -1, f'{i}') # DUPLICATE
-    #
-    #     self.assertEqual(FIXMsg.group_count(m, 10), -1)
-    #     self.assertEqual(FIXMsg.group_count(m, USHRT_MAX-10), -6) # ERR_DATA_OVERFLOW
-    #
-    #     assert FIXMsg.is_valid(m, ) == 0
-    #
+    def test_groups_resize_and_multi_types(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef FIXMsgStruct * m_tmp
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 20, UCHAR_MAX)
+        assert m.header.data_size == (sizeof(FIXRec) + sizeof(int)) * 20
+
+        cdef void* value
+        cdef uint16_t value_size
+        cdef int t = 1
+        cdef uint16_t g_tags[4]
+
+        cdef int i = 123
+        cdef double f = 8907.889
+        cdef char c = b'V'
+        cdef char * s = b'my fancy string, it may be too long!'
+
+        cdef int n_elements = 5
+        while t < 100:
+
+            if t % 10 == 0:
+                g_tags[0] = t + 1
+                g_tags[1] = t + 3
+                g_tags[2] = t + 5
+                g_tags[3] = t + 7
+
+                self.assertEqual(FIXMsg.group_start(m, t, n_elements, 4, g_tags), 1)
+                for k in range(n_elements):
+                    rc = FIXMsg.group_add_tag(m, t, t + 1, &i, sizeof(int), b'i')
+                    has_resize = False
+                    if rc == -21:
+                        m_tmp = FIXMsg.resize(m, 0, USHRT_MAX-m.header.data_size)
+                        assert m_tmp != NULL, f'tags={m.header.tags_count} data={m.header.data_size} lastpos={m.header.last_position}'
+                        m = m_tmp
+                        rc = FIXMsg.group_add_tag(m, t, t + 1, &i, sizeof(int), b'i')
+                        has_resize = True
+                    self.assertEqual(rc, 1, f't={t} k={k} has_resize={has_resize}')
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 3, &f, sizeof(double), b'f'), 1)
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 5, &c, sizeof(char), b'c'), 1)
+                    self.assertEqual(FIXMsg.group_add_tag(m, t, t + 7, s, strlen(s)+1, b's'), 1, f'k={k}')
+                self.assertEqual(FIXMsg.group_finish(m, t), 1, f't={t} k={k}')
+                assert FIXMsg.is_valid(m) == 1
+                self.assertEqual(FIXMsg.group_count(m, t), n_elements)
+
+                for k in range(n_elements):
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 1, &value, &value_size, b'i'), 1,
+                                     f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert (<int *> value)[0] == i
+                    assert value_size == sizeof(int)
+
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 7, &value, &value_size, b's'), 1, f't={t} k={k} n_realocs={m.header.n_reallocs} g_tags={g_tags}')
+                    assert value_size == strlen(s) + 1
+                    #cybreakpoint(strcmp((<char *> value), s) != 0)
+                    assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
+
+                t += 10
+            else:
+                FIXMsg.set(m, t, &t, sizeof(int), b'i')
+                t += 1
+        # All should be valid
+        assert FIXMsg.is_valid(m, ) == 1
+        t = 1
+        while t < 100:
+            if t % 10 == 0:
+                for k in range(n_elements):
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 1, &value, &value_size, b'i'), 1, f't={t} k={k}')
+                    assert (<int*>value)[0] == i
+                    assert value_size == sizeof(int)
+
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 3, &value, &value_size, b'f'), 1)
+                    assert (<double *> value)[0] == f
+                    assert value_size == sizeof(double)
+
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 5, &value, &value_size, b'c'), 1)
+                    assert (<char *> value)[0] == c
+                    assert value_size == sizeof(char)
+
+                    self.assertEqual(FIXMsg.group_get(m, t, k, t + 7, &value, &value_size, b's'), 1, f'k={k}')
+                    assert value_size == strlen(s) + 1
+                    assert strcmp((<char *> value), s) == 0, f't={t}, k={k} n_realocs={m.header.n_reallocs} data_size={m.header.data_size}'
+                t += 10
+            else:
+                self.assertEqual(FIXMsg.get(m, t, &value, &value_size, b'i'), 1, f't={t}' )
+                assert (<int *> value)[0] == t
+                assert value_size == sizeof(int)
+                t += 1
+
+        # All should be valid
+        assert FIXMsg.is_valid(m, ) == 1
+        FIXMsg.destroy(m)
+
+    def test_group_overflow__group_start(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m = make_almost_overflowed(<uint16_t>5)
+        assert m != NULL
+        assert m.header.last_position, 65531  # Real bytes written
+
+        self.assertEqual(FIXMsg.group_start(m, 1000, 2, 3, [101, 102, 103]), -6)
+        assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
+
+    def test_group_overflow__group_add_tag(self):
+        cdef FIXMsgStruct * m = make_almost_overflowed(125)
+        assert m != NULL
+        self.assertEqual(m.header.last_position,  65410)  # Real bytes written
+
+        # 125 bytes remaining to 65535
+        # Group start size = 26 bytes
+        cdef uint16_t max_records = 110
+        self.assertEqual(FIXMsg.group_start(m, max_records + 10,
+                                       10,  # N elements
+                                       1,  # n - tags
+                                       [max_records + 11]),
+                         1)
+
+        # 99 bytes remaining for msg size (10 = FIXRec(6) + int(4))
+        for i in range(10):
+            if i < 8:
+                # Good
+                self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
+            else:
+                # Overflow!
+                self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), -6, f'i={i}')
+
+        assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
+
+
+    def test_group_overflow__group_finish(self):
+        cdef FIXMsgStruct * m = make_almost_overflowed(125)
+        assert m != NULL
+        self.assertEqual(m.header.last_position, 65410)  # Real bytes written
+        cdef uint16_t max_records = 110
+        # 125 bytes remaining to 65535
+        # Group start size = 30 bytes
+        self.assertEqual(FIXMsg.group_start(m, max_records + 10,
+                                       8,  # N elements
+                                       5,  # n - tags
+                                       # Tags must be unique
+                                       [max_records + 11,
+                                        max_records + 12,
+                                        max_records + 13,
+                                        max_records + 14,
+                                        max_records + 15
+                                        ]),
+                         1)
+
+        # 95 bytes remaining for msg size (10 = FIXRec(6) + int(4))
+        for i in range(8):
+            self.assertEqual(FIXMsg.group_add_tag(m, max_records + 10, max_records + 11, &i, sizeof(int), b'i'), 1, f'i={i}')
+
+        # No room for extra FIXRec(6) bytes, overflow
+        self.assertEqual(FIXMsg.group_finish(m, max_records + 10), -6)
+
+        self.assertEqual(FIXMsg.group_count(m, max_records + 10), -6) # ERR_DATA_OVERFLOW
+
+        assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
+
+    def test_group_count_errors(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 20)
+
+        cdef int i  = 0
+        cdef int val
+
+        # Exclude zero tag error and tag 35 error
+        max_records = int(USHRT_MAX / (sizeof(FIXRec) + sizeof(int))) - 10
+
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'i'), 1, f'{i}')
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'i'), -1, f'{i}') # DUPLICATE
+
+        self.assertEqual(FIXMsg.group_count(m, 10), -1)
+        self.assertEqual(FIXMsg.group_count(m, USHRT_MAX-10), -6) # ERR_DATA_OVERFLOW
+
+        assert FIXMsg.is_valid(m, ) == 0
+        FIXMsg.destroy(m)
+
     # def test_getset_int(self):
     #     # Exact match no resize
     #     cdef FIXMsgStruct * m

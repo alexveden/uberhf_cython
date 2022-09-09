@@ -287,14 +287,10 @@ cdef class FIXMsg:
         if self.header.is_read_only:
             return NULL
 
-        if not FIXMsg.is_valid(self):
-            return NULL
-
-
-        if (USHRT_MAX - self.header.data_size) <= add_values_size:
+        if (USHRT_MAX - self.header.data_size) < add_values_size:
             self.header.last_position = USHRT_MAX
             return NULL
-        if (UCHAR_MAX - self.header.tags_capacity) <= add_tags:
+        if (UCHAR_MAX - self.header.tags_capacity) < add_tags:
             self.header.last_position = USHRT_MAX
             return NULL
 
@@ -309,7 +305,6 @@ cdef class FIXMsg:
         cdef int open_group_offset = -1
         cdef int open_group_tag = -1
         if self.open_group != NULL:
-            cyassert(0)  # TODO: fix this later
             # We have open group, keep offset between group and self.values if main pointer will be changed
             open_group_offset = <void *> self.open_group - self.values
             open_group_tag = self.open_group.fix_rec.tag
@@ -351,14 +346,10 @@ cdef class FIXMsg:
         # Set magic end because of data resize
         magic_end[0] = FIX_MAGIC
 
-        if self.open_group != NULL:
-            cyassert(0)  # TODO: fix this later
-            # self.open_group = <FIXGroupRec *> (self.values + open_group_offset)
-            # cyassert(self.open_group.fix_rec.tag == open_group_tag)
-            # cyassert(self.open_group.fix_rec.value_type == b'\x07')
-
-        # Message must remain valid after resize (i.e. magic numbers are in place)
-        cyassert(FIXMsg.is_valid(new_self))
+        if open_group_offset != -1:
+            new_self.open_group = <FIXGroupRec *> (new_self.values + open_group_offset)
+            cyassert(new_self.open_group.fix_rec.tag == open_group_tag)
+            cyassert(new_self.open_group.fix_rec.value_type == b'\x07')
 
         return new_self
 
