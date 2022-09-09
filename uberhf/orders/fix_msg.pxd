@@ -90,7 +90,7 @@ cdef class FIXMsg:
     cdef bint is_valid(FIXMsgStruct * self) nogil
 
     @staticmethod
-    cdef bint has_capacity(FIXMsgStruct * self, uint16_t new_rec_size) nogil
+    cdef bint has_capacity(FIXMsgStruct * self, uint8_t add_tags, uint16_t new_rec_size) nogil
 
     @staticmethod
     cdef int set(FIXMsgStruct * self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil

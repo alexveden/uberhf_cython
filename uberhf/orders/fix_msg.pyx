@@ -245,16 +245,19 @@ cdef class FIXMsg:
         return TAG_NOT_FOUND
 
     @staticmethod
-    cdef bint has_capacity(FIXMsgStruct * self, uint16_t new_rec_size) nogil:
+    cdef bint has_capacity(FIXMsgStruct * self, uint8_t add_tags, uint16_t new_rec_size) nogil:
         cyassert(new_rec_size > 0)
 
         if self.header.tags_count == UCHAR_MAX:
             return False
 
-        if self.header.tags_count + 1 > self.header.tags_capacity:
+        if UCHAR_MAX-self.header.tags_count <= add_tags:
             return False
 
-        if <uint16_t> (USHRT_MAX - self.header.last_position) <= new_rec_size:
+        if self.header.tags_count+add_tags > self.header.tags_capacity:
+            return False
+
+        if (USHRT_MAX - self.header.last_position) <= new_rec_size:
             return False
 
         return self.header.last_position + new_rec_size <= self.header.data_size
@@ -279,7 +282,7 @@ cdef class FIXMsg:
             return NULL
 
 
-        if <uint16_t> (USHRT_MAX - self.header.data_size) <= add_values_size:
+        if (USHRT_MAX - self.header.data_size) <= add_values_size:
             self.header.last_position = USHRT_MAX
             return NULL
         if (UCHAR_MAX - self.header.tags_capacity) <= add_tags:
@@ -400,7 +403,7 @@ cdef class FIXMsg:
         cdef int rc = 0
         cdef uint16_t last_position = self.header.last_position
 
-        if FIXMsg.has_capacity(self, value_size + sizeof(FIXRec)) == 0:
+        if FIXMsg.has_capacity(self, 1, value_size + sizeof(FIXRec)) == 0:
             return ERR_DATA_RESIZE_REQUIRED
 
         cdef FIXRec * rec

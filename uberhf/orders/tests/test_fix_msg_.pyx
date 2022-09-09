@@ -183,6 +183,11 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         cdef int value = 123
         assert sizeof(int) + sizeof(FIXRec) == 10
         assert FIXMsg.is_valid(m) == 1
+        assert FIXMsg.has_capacity(m, 2, 10) == 1
+        assert FIXMsg.has_capacity(m, 3, 10) == 0
+        assert FIXMsg.has_capacity(m, 1, 10) == 1
+        assert FIXMsg.has_capacity(m, 2, 11) == 0
+
 
         assert FIXMsg.set(m, 11, &value, sizeof(int), b'i') == 1
         assert m.header.tags_count == 1
@@ -191,7 +196,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.header.last_position == 10
         assert FIXMsg.is_valid(m) == 1
 
-        assert FIXMsg.has_capacity(m, 10) == 0
+        assert FIXMsg.has_capacity(m, 1, 10) == 0
 
         cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 0, 10)
         assert m2 != NULL
@@ -225,7 +230,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert rec.value_len == 4
         assert rec.value_type == b'i'
 
-        assert FIXMsg.has_capacity(m, 10) == 0
+        assert FIXMsg.has_capacity(m, 1, 10) == 0
 
         # Getting reject, but message is still valid.
         # Giving a chance to user code to resize it
@@ -248,7 +253,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.header.last_position == 10
         assert FIXMsg.is_valid(m) == 1
 
-        assert FIXMsg.has_capacity(m, 10) == 0
+        assert FIXMsg.has_capacity(m, 1, 10) == 0
 
         cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 1, 0)
         assert m2 != NULL
@@ -278,7 +283,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.header.last_position == 10
         assert FIXMsg.is_valid(m) == 1
 
-        assert FIXMsg.has_capacity(m, 10) == 0
+        assert FIXMsg.has_capacity(m, 1, 10) == 0
         cdef FIXMsgStruct * m2 = FIXMsg.resize(m, 1, 10)
         assert m2 != NULL
         m = m2  # m may not be a valid pointer anymore!
