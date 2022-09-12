@@ -75,7 +75,7 @@ cdef FIXMsgStruct * make_almost_overflowed(int n_bytes_remaining):
 # noinspection PyTypeChecker
 class CyFIXStaticMsgTestCase(unittest.TestCase):
     def test_size_of_structs(self):
-        self.assertEqual(18, sizeof(FIXHeader))
+        self.assertEqual(20, sizeof(FIXHeader))
         self.assertEqual(4, sizeof(FIXOffsetMap))
         self.assertEqual(6, sizeof(FIXRec))
         self.assertEqual(14, sizeof(FIXGroupRec))
@@ -101,6 +101,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert m.open_group == NULL
         assert FIXMsg.is_valid(m) == 1
         assert m.header.is_read_only == 0
+        assert m.header.clord_tag_offset == USHRT_MAX-1
         FIXMsg.destroy(m)
 
 
@@ -1987,5 +1988,74 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         assert FIXMsg.replace(m, 10, &value, sizeof(int), b'c') == 0  # not found
 
 
+    def test_getset_long(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        cdef long long_int = -1203981203813L
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef int i = 12
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'l'), 1, f'{i}')
+
+        assert FIXMsg.set_long(m, 12, long_int) == 1
+        assert FIXMsg.get_long(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_long(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_long(m, 12)[0] == long_int
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'l') == 1
+        assert (<long *> value)[0] == long_int
+        FIXMsg.destroy(m)
+
+    def test_getset_uint64(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        cdef uint64_t long_int = 1203981203813L
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        cdef int i = 12
+        self.assertEqual(FIXMsg.set(m, 10, &i, sizeof(int), b'L'), 1, f'{i}')
+
+        assert FIXMsg.set_uint64(m, 12, long_int) == 1
+        assert FIXMsg.get_uint64(m, 10) == NULL
+        assert FIXMsg.get_last_error(m, ) == -20  #ERR_UNEXPECTED_TYPE_SIZE   = -20
+        assert FIXMsg.get_uint64(m, 13) == NULL
+        assert FIXMsg.get_last_error(m, ) == 0  #ERR_NOT_FOUND
+        assert FIXMsg.get_uint64(m, 12)[0] == long_int
+        assert FIXMsg.get_last_error(m, ) == 1  # Success no error!
+
+        assert FIXMsg.get(m, 12, &value, &size, b'L') == 1
+        assert (<uint64_t *> value)[0] == long_int
+        FIXMsg.destroy(m)
+
+    def test_clordid_cached(self):
+        # Exact match no resize
+        cdef FIXMsgStruct * m
+        cdef void * value
+        cdef uint16_t size
+
+        cdef uint64_t long_int = 1203981203813L
+
+        m = FIXMsg.create(<char> b'@', (sizeof(FIXRec) + sizeof(int)) * 2000, 10)
+
+        assert m.header.clord_tag_offset == USHRT_MAX-1
+        cdef int i = 1245
+        self.assertEqual(FIXMsg.set(m, 11, &i, sizeof(int), b'i'), 1, f'{i}')
+        self.assertEqual(m.header.clord_tag_offset, 0)
+
+        self.assertEqual(FIXMsg.get(m, 11, &value, &size, b'i'), 1, f'{i}')
+        assert (<int*>value)[0] == 1245
+
+        FIXMsg.destroy(m)
 
 

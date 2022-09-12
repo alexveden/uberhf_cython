@@ -76,6 +76,7 @@ cdef class FIXMsg:
         self.header.tags_capacity = tag_tree_capacity
         self.header.tags_last = 0
         self.header.tags_last_idx = UCHAR_MAX
+        self.header.clord_tag_offset = TAG_NOT_FOUND
 
         # Tag index pointer (MUST BE AFTER HEADER INITIALIZED!)
         self.tags = _calc_offset_tags(self)
@@ -553,15 +554,21 @@ cdef class FIXMsg:
         cdef uint16_t _data_offset_idx =  FIXMsg._set_tag_offset(self, tag, last_position)
 
         if _data_offset_idx  >= USHRT_MAX-10:
-
             if _data_offset_idx == USHRT_MAX-2: #RESULT_DUPLICATE = 	65533 # USHRT_MAX-2
                 # Duplicate or error
+                if tag == 11:
+                    # This is ClOrdId tag, the most frequently used, cache its offset for quick access
+                    self.header.clord_tag_offset = _data_offset_idx
                 return ERR_FIX_DUPLICATE_TAG
             elif _data_offset_idx == USHRT_MAX-3:  # TAG_NEED_RESIZE
                 return ERR_RESIZE_REQUIRED
             else:
                 # Other generic error, typically oveflow
                 return ERR_DATA_OVERFLOW
+
+        if tag == 11:
+            # This is ClOrdId tag, the most frequently used, cache its offset for quick access
+            self.header.clord_tag_offset = last_position
 
         # New value added successfully
         rec = <FIXRec *> (self.values + last_position)
@@ -582,6 +589,8 @@ cdef class FIXMsg:
                 return ERR_UNEXPECTED_TYPE_SIZE
         else:
             memcpy(self.values + last_position + sizeof(FIXRec), <char *> value, value_size)
+
+
 
         return 1
 
@@ -628,12 +637,18 @@ cdef class FIXMsg:
             value_size[0] = sizeof(char)
             return 1
 
-        cdef uint16_t data_offset = FIXMsg._get_tag_offset(self, tag)
+        cdef uint16_t data_offset
+        if tag == 11:
+            # Quick path for getting ClOrdId(11) tag
+            data_offset = self.header.clord_tag_offset
+        else:
+            data_offset = FIXMsg._get_tag_offset(self, tag)
+
         if data_offset >= USHRT_MAX-10:
-            if data_offset == USHRT_MAX-1:
+            if data_offset == TAG_NOT_FOUND:
                 # Tag not found
                 return ERR_NOT_FOUND
-            if data_offset == USHRT_MAX-2:
+            if data_offset == TAG_DUPLICATE:
                 # Possibly duplicate tag
                 return ERR_FIX_DUPLICATE_TAG
             # Likely tag number is too high, other generic error, we must stop anyway
@@ -1128,6 +1143,8 @@ cdef class FIXMsg:
     cdef int set_int(FIXMsgStruct * self, uint16_t tag, int value) nogil:
         """
         Set signed integer tag
+        
+        Tag type 'i'
 
         :param tag: any valid tag
         :param value: any integer value
@@ -1139,6 +1156,8 @@ cdef class FIXMsg:
     cdef int * get_int(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Get signed integer tag
+        
+        Tag type 'i'
 
         :param tag: any valid tag
         :return: pointer to value, or NULL on error + sets last_error
@@ -1160,6 +1179,8 @@ cdef class FIXMsg:
     cdef int set_bool(FIXMsgStruct * self, uint16_t tag, bint value) nogil:
         """
         Set boolean
+        
+        Tag type 'b'
 
         :param tag: any valid tag
         :param value: must be 0 or 1
@@ -1175,6 +1196,8 @@ cdef class FIXMsg:
     cdef int8_t * get_bool(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Get boolean
+        
+        Tag type 'b'
 
         :param tag:
         :return: pointer to value, or NULL on error + sets last_error
@@ -1200,6 +1223,8 @@ cdef class FIXMsg:
     cdef int set_char(FIXMsgStruct * self, uint16_t tag, char value) nogil:
         """
         Set char
+        
+        Tag type 'c'
 
         :param tag: any valid tag
         :param value: must be > 20 and < 127 (i.e. all printable chars are allowed)
@@ -1216,6 +1241,8 @@ cdef class FIXMsg:
     cdef char * get_char(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Get char
+        
+        Tag type 'c'
 
         :param tag:
         :return: pointer to value, or NULL on error + sets last_error
@@ -1234,9 +1261,83 @@ cdef class FIXMsg:
             return NULL
 
     @staticmethod
+    cdef int set_uint64(FIXMsgStruct * self, uint16_t tag, uint64_t value) nogil:
+        """
+        Set unsigned long number (type uint64_t)
+        
+        Tag type 'L'
+
+        :param tag: any valid tag
+        :param value: any double value
+        :return: positive on success, negative on error
+        """
+        return FIXMsg.set(self, tag, &value, sizeof(uint64_t), b'L')
+
+    @staticmethod
+    cdef uint64_t * get_uint64(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get unsigned long (type uint64_t)
+        
+        Tag type 'L'
+
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'L')
+        if rc > 0 and size == sizeof(uint64_t):
+            return <uint64_t *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
+    cdef int set_long(FIXMsgStruct * self, uint16_t tag, long value) nogil:
+        """
+        Set signed long number (type int64_t or long)
+        
+        Tag type 'l'
+
+        :param tag: any valid tag
+        :param value: any double value
+        :return: positive on success, negative on error
+        """
+        return FIXMsg.set(self, tag, &value, sizeof(long), b'l')
+
+    @staticmethod
+    cdef long * get_long(FIXMsgStruct * self, uint16_t tag) nogil:
+        """
+        Get signed long number (type int64_t or long)
+        
+        Tag type 'l'
+         
+        :param tag:
+        :return: pointer to value, or NULL on error + sets last_error
+        """
+        self.header.last_error = 1
+        cdef void * value
+        cdef uint16_t size
+        cdef int rc = FIXMsg.get(self, tag, &value, &size, b'l')
+        if rc > 0 and size == sizeof(long):
+            return <long *> value
+        else:
+            if rc > 0:
+                self.header.last_error = ERR_UNEXPECTED_TYPE_SIZE
+            else:
+                self.header.last_error = rc
+            return NULL
+
+    @staticmethod
     cdef int set_double(FIXMsgStruct * self, uint16_t tag, double value) nogil:
         """
         Set floating point number (type double)
+        
+        Tag type 'f'
 
         :param tag: any valid tag
         :param value: any double value
@@ -1248,6 +1349,8 @@ cdef class FIXMsg:
     cdef double * get_double(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Get double tag
+        
+        Tag type 'f'
 
         :param tag:
         :return: pointer to value, or NULL on error + sets last_error
@@ -1269,6 +1372,8 @@ cdef class FIXMsg:
     cdef int set_utc_timestamp(FIXMsgStruct * self, uint16_t tag, long value_ns) nogil:
         """
         Set UTC timestamp as nanoseconds since epoch (long)
+        
+        Tag type 't'
 
         :param tag: any valid tag
         :param value_ns: nanoseconds since epoch
@@ -1280,6 +1385,8 @@ cdef class FIXMsg:
     cdef long * get_utc_timestamp(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Gets UTC timestamp as nanoseconds since epoch
+        
+        Tag type 't'
 
         :param tag:
         :return: pointer to value, or NULL on error + sets last_error
@@ -1301,6 +1408,8 @@ cdef class FIXMsg:
     cdef int set_str(FIXMsgStruct * self, uint16_t tag, char *value, uint16_t length) nogil:
         """
         Set string field
+        
+        Tag type 's'
 
         :param tag: any valid tag
         :param value: any string of length > 0 and < 1024
@@ -1320,6 +1429,8 @@ cdef class FIXMsg:
     cdef char * get_str(FIXMsgStruct * self, uint16_t tag) nogil:
         """
         Get string field
+        
+        Tag type 's'
 
         :param tag: any valid tag
         :return: pointer to value, or NULL on error + sets last_error

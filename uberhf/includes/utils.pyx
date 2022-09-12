@@ -87,7 +87,6 @@ cdef int random_int(int lo, int hi) nogil:
     if hi == lo:
         return lo
 
-    cyassert(hi >= lo)
     if hi < lo:
         return INT_MIN
 

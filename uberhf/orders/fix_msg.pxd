@@ -20,6 +20,9 @@ ctypedef struct FIXHeader:
     uint16_t tags_last
     uint8_t tags_last_idx
 
+    # Quick tag offsets
+    uint16_t clord_tag_offset
+
 
 ctypedef struct FIXRec:
     uint16_t tag
@@ -169,3 +172,13 @@ cdef class FIXMsg:
     cdef int set_str(FIXMsgStruct * self, uint16_t tag, char *value, uint16_t length) nogil
     @staticmethod
     cdef char * get_str(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_uint64(FIXMsgStruct * self, uint16_t tag, uint64_t value) nogil
+    @staticmethod
+    cdef uint64_t * get_uint64(FIXMsgStruct * self, uint16_t tag) nogil
+
+    @staticmethod
+    cdef int set_long(FIXMsgStruct * self, uint16_t tag, long value) nogil
+    @staticmethod
+    cdef long * get_long(FIXMsgStruct * self, uint16_t tag) nogil
