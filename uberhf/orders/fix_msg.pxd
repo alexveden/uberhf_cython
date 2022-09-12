@@ -2,7 +2,6 @@
 Universal binary message container for FIX protocol
 """
 from libc.stdint cimport uint64_t, uint16_t, int8_t, uint8_t
-from uberhf.orders.fix_tag_tree cimport FIXTagBinaryTree
 
 ctypedef struct FIXHeader:
     uint16_t magic_number

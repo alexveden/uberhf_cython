@@ -1,5 +1,4 @@
 from uberhf.datafeed.quote_info import QuoteInfo
-from uberhf.orders.fix_binary_msg cimport FIXBinaryMsg
 from uberhf.includes.utils cimport datetime_nsnow
 from libc.math cimport isfinite
 

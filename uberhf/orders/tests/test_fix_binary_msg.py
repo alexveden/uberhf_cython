@@ -1,1 +1,0 @@
-from uberhf.orders.tests.test_fix_binary_msg_ import *

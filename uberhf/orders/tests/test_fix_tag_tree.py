@@ -1,1 +1,0 @@
-from uberhf.orders.tests.tests_fix_tag_tree_ import *

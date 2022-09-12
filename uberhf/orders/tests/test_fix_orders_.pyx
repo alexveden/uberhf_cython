@@ -10,8 +10,6 @@ from libc.stdint cimport uint64_t, uint16_t
 from libc.string cimport memcmp, strlen, strcmp, memcpy, memset
 from libc.stdlib cimport malloc, free
 from uberhf.prototols.messages cimport *
-from uberhf.orders.fix_tag_tree cimport *
-from uberhf.orders.fix_binary_msg cimport *
 from uberhf.orders.fix_orders import FIXNewOrderSingle
 from libc.limits cimport USHRT_MAX
 

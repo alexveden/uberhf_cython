@@ -4,7 +4,6 @@ from libc.string cimport memcpy, memset, strlen, memmove
 from libc.limits cimport USHRT_MAX, UCHAR_MAX
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
 from uberhf.includes.utils cimport strlcpy
-from uberhf.orders.fix_tag_tree cimport binary_tree_destroy, binary_tree_create, binary_tree_set_offset, binary_tree_get_offset
 DEF FIX_MAGIC = 22093
 
 cdef extern from *:
