@@ -1,6 +1,6 @@
 from uberhf.orders.fix_binary_msg cimport FIXBinaryMsg
 from uberhf.orders.fix_msg cimport FIXMsg, FIXMsgStruct
-from uberhf.includes.utils cimport timer_nsnow, timedelta_ns, TIMEDELTA_SEC, random_int
+from uberhf.includes.utils cimport timer_nsnow, timedelta_ns, TIMEDELTA_SEC, random_int, sleep_ns
 from uberhf.includes.asserts cimport cybreakpoint, cyassert
 from libc.stdlib cimport calloc, free, realloc, malloc
 from libc.string cimport memset, memmove
@@ -109,6 +109,53 @@ cdef fixmsg_struct_based_make_sequential(int n_elements):
         value = FIXMsg.get_int(m, i + 1)
         assert value != NULL, FIXMsg.get_last_error_str(FIXMsg.get_last_error(m))
 
+    FIXMsg.destroy(m)
+
+cdef fixmsg_struct_creation(int n_elements):
+    """
+
+    :param n_elements: 
+    :return: 
+    """
+    cdef long magic_sum = 0
+    cdef FIXMsgStruct * m
+
+    m = FIXMsg.create(<char> b'C', 1, n_elements)
+    magic_sum += m.header.magic_number
+    FIXMsg.destroy(m)
+    return magic_sum
+
+cdef long fixmsg_struct_creation_nogil(int n_elements) nogil:
+    """
+
+    :param n_elements: 
+    :return: 
+    """
+    cdef long magic_sum = 0
+    cdef FIXMsgStruct * m
+    cdef int i = 0
+    cdef void * value
+    cdef uint16_t value_size
+    cdef int rc, j
+
+    for j in range(100000):
+        m = FIXMsg.create(<char> b'C', 2000, 110)
+        for i in range(n_elements):
+            if i + 1 == 35:
+                continue
+            rc = FIXMsg.set_int(m, i + 1, i)
+            if rc < 0:
+                return rc
+
+        for i in range(n_elements):
+            if i + 1 == 35:
+                continue
+            value = FIXMsg.get_int(m, i + 1)
+            if value == NULL:
+                return -100000
+
+        FIXMsg.destroy(m)
+    return 1
 
 cdef fixmsg_struct_based_random_tags(int n_elements, int * rnd_array, int rnd_size):
     """
@@ -136,17 +183,27 @@ cpdef main():
     cdef long t_end
     cdef double duration
     cdef int i = 0
+    cdef int a = 0
 
     msg_size = 100
     print('-'*100)
     print(f'SEQUENTIAL ACCESS {msg_size} tags/msg')
     t_start = timer_nsnow()
+    t_start2 = time.time_ns()
+    #for i in range(n_steps):
     for i in range(n_steps):
         fixmsg_make_sequential(msg_size)
+        #sleep_ns(0.0001)
+        #time.sleep(0.0001)
+        #a += 1
+        pass
     t_end = timer_nsnow()
+    t_end2 = time.time_ns()
     duration = timedelta_ns(t_end, t_start, TIMEDELTA_SEC)
+    duration2 = timedelta_ns(t_end2, t_start2, TIMEDELTA_SEC)
     assert duration != 0
-    print(f'FixMsg CLASS speed: {n_steps/duration} msg/sec')
+    print(f'FixMsg CLASS speed: {n_steps/duration} {duration }msg/sec')
+    print(f'FixMsg CLASS speed: {n_steps / duration2} {duration2} msg/sec')
 
 
     print(f'RANDOM ACCESS {msg_size} tags/msg')
@@ -159,6 +216,23 @@ cpdef main():
 
     print('-' * 100)
     print("NEW FIX MSG: STATIC STRUCTS")
+    t_start = timer_nsnow()
+    for i in range(n_steps):
+        fixmsg_struct_creation(msg_size)
+    t_end = timer_nsnow()
+    duration = timedelta_ns(t_end, t_start, TIMEDELTA_SEC)
+    assert duration != 0
+    print(f'FixMsg STRUCT creation: {n_steps / duration} msg/sec')
+
+    print('-' * 100)
+    print("NEW FIX MSG: STATIC STRUCTS")
+    t_start = timer_nsnow()
+    assert fixmsg_struct_creation_nogil(msg_size) > 0
+    t_end = timer_nsnow()
+    duration = timedelta_ns(t_end, t_start, TIMEDELTA_SEC)
+    assert duration != 0
+    print(f'FixMsg STRUCT creation NOGIL: {n_steps / duration} msg/sec')
+
     t_start = timer_nsnow()
     for i in range(n_steps):
         fixmsg_struct_based_make_sequential(msg_size)

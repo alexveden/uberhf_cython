@@ -132,7 +132,7 @@ cdef class DataSourceMock(DatasourceAbstract):
     cdef void source_on_activate(self) nogil:
         self.on_activate_ncalls += 1
 
-        cdef ProtocolDSQuoteMessage msg = ProtocolDSQuoteMessage()
+        cdef ProtocolDSQuoteMessage msg
         msg.header.msg_type = b'q'
         msg.header.protocol_id = self.protocol.protocol_id
         msg.header.client_life_id = self.protocol.client_life_id
@@ -192,6 +192,8 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
         cdef long dt_prev_call
         cdef long dt_now
 
+        cdef int heart_beat_call_cnt = 0
+
         with zmq.Context() as ctx:
             transport_s = None
             transport_c = None
@@ -229,16 +231,19 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                         rc = ps.on_process_new_message(transport_data, msg_size)
                         transport_s.receive_finalize(transport_data)
                         assert rc > 0 or rc == -1000, rc
+                        heart_beat_call_cnt += 1
                     if c_socket in socks and socks[c_socket] == zmq.POLLIN:
                         transport_data = transport_c.receive(&msg_size)
                         rc = pc.on_process_new_message(transport_data, msg_size)
                         transport_c.receive_finalize(transport_data)
                         assert rc > 0 or rc == PROTOCOL_ERR_CLI_ERR, rc
+                        heart_beat_call_cnt += 1
 
                     dt_now = datetime_nsnow()
                     if timedelta_ns(dt_now, dt_prev_call, TIMEDELTA_MILLI) >= 50:
                         assert ps.heartbeat(dt_now) >= 0
                         assert pc.heartbeat(dt_now) >= 0
+                        heart_beat_call_cnt += 1
 
                         dt_prev_call = dt_now
 
@@ -250,7 +255,7 @@ class CyProtocolDataSourceBaseTestCase(unittest.TestCase):
                 assert source.on_initialize_ncalls == 1
                 assert feed.on_initialize_ncalls == 1
 
-                assert feed.on_register_n_ok == 2
+                assert feed.on_register_n_ok == 2, heart_beat_call_cnt
                 assert feed.on_register_n_err == 1
                 assert feed.n_unique_tickers == 1
 

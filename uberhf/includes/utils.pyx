@@ -3,6 +3,7 @@ from libc.stdlib cimport rand, srand, RAND_MAX
 cimport cython
 from .asserts cimport cyassert
 from libc.time cimport tm, localtime
+from libc.limits cimport INT_MIN
 
 cdef size_t strlcpy(char * dst, const char * src, size_t  dsize) nogil:
     """
@@ -77,16 +78,18 @@ cdef double random_float() nogil:
 @cython.cdivision(True)
 cdef int random_int(int lo, int hi) nogil:
     """
-    Random integer number between range of integers [lo; hi) 
-    :return: 
+    Random integer number between range of integers [lo; hi)
+         
+    :return: random int between lo(including) and hi(excluding), or INT_MIN - on error  
     """
     cyassert(hi >= lo)
 
     if hi == lo:
         return lo
 
+    cyassert(hi >= lo)
     if hi < lo:
-        return 0
+        return INT_MIN
 
     # On linux rand() function the same as random()
     return rand() % (hi - lo) + lo
@@ -109,15 +112,17 @@ cdef unsigned int gen_lifetime_id(int module_id) nogil:
 
     Number format mmHHMMSSrr, where mm - module ID, HHMMSS - hour:min:sec, rr - some random number between 1 and 99
     :param module_id: unique module ID number (between 1 and 40)
-    :return: Integer in format mmHHMMSSrr
+    :return: Integer in format mmHHMMSSrr, or zero on error!
     """
-    if module_id > 0 and module_id <= 40:
-        return -1
+    cyassert(module_id > 0 and module_id <= 40)
+    if not( module_id > 0 and module_id <= 40):
+        return 0
+
 
     cdef timespec spec
     cdef int rc = clock_gettime(CLOCK_REALTIME, &spec)
     if rc != 0:
-        return -1
+        return 0
 
     random_seed(spec.tv_nsec)
 
