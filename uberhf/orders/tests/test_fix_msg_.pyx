@@ -1925,3 +1925,67 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
                 assert FIXMsg._get_tag_offset(m, i + 1) == i, f'{FIXMsg._get_tag_offset(m, i + 1)} != {i}'
             else:
                 assert (FIXMsg._get_tag_offset(m, i + 1) == 65534), i  #DEF TAG_NOT_FOUND = 	65534 # USHRT_MAX-1
+
+    def test_sizeof(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', 200, 10)
+
+        assert FIXMsg.size(NULL) == 0
+        assert FIXMsg.size(m) == (sizeof(FIXMsgStruct) +                               # Header
+                                    m.header.data_size +                                 # self.values
+                                    sizeof(uint16_t) +                                   # Magic middle
+                                    sizeof(FIXOffsetMap) * m.header.tags_capacity +      # self.tags
+                                    sizeof(uint16_t)                                     # Magic end
+                                    )
+
+        m.header.tags_capacity = 0
+        assert FIXMsg.size(m) == 0
+
+        m.header.data_size = 0
+        assert FIXMsg.size(m) == 0
+
+        FIXMsg.destroy(m)
+
+    def test_copy(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', 200, 10)
+        cdef FIXMsgStruct * m2 = FIXMsg.copy(m)
+
+        assert FIXMsg.size(m) == FIXMsg.size(m2)
+        assert memcmp(m, m2, FIXMsg.size(m)) == 0
+        FIXMsg.destroy(m)
+        FIXMsg.destroy(m2)
+
+    def test_check_buffer(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', 200, 10)
+
+        assert FIXMsg.check_buffer(m, FIXMsg.size(m)) != NULL
+
+        assert FIXMsg.check_buffer(NULL, 1000) == NULL
+        assert FIXMsg.check_buffer(m, sizeof(FIXMsgStruct)-1) == NULL
+        assert FIXMsg.check_buffer(m, FIXMsg.size(m) - 1) == NULL
+        assert FIXMsg.check_buffer(m, FIXMsg.size(m) + 1) == NULL
+
+        m.header.data_size = 0
+        assert FIXMsg.check_buffer(m, FIXMsg.size(m)) == NULL
+
+        FIXMsg.destroy(m)
+
+    def test_replace(self):
+        cdef FIXMsgStruct * m = FIXMsg.create(<char> b'@', 200, 10)
+
+        assert FIXMsg.set_int(m, 11, 123) == 1
+        assert FIXMsg.get_int(m, 11) != NULL
+        assert FIXMsg.get_int(m, 11)[0] == 123
+
+        cdef int value = 333
+
+        assert FIXMsg.replace(m, 11, &value, sizeof(int), b'i') == 1
+        assert FIXMsg.get_int(m, 11)[0] == 333
+
+        assert FIXMsg.replace(m, 11, &value, sizeof(int)+1, b'i') == -20 # ERR_UNEXPECTED_TYPE_SIZE
+        assert FIXMsg.replace(m, 11, &value, sizeof(int) - 1, b'i') == -20  # ERR_UNEXPECTED_TYPE_SIZE
+        assert FIXMsg.replace(m, 11, &value, sizeof(int), b'c') == -2  # ERR_FIX_TYPE_MISMATCH
+        assert FIXMsg.replace(m, 10, &value, sizeof(int), b'c') == 0  # not found
+
+
+
+

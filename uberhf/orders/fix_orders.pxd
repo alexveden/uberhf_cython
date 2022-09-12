@@ -1,19 +1,30 @@
-from .fix_binary_msg cimport FIXBinaryMsg
+from .fix_msg cimport FIXMsgStruct, FIXMsg
 from uberhf.datafeed.quote_info import QuoteInfo
+from libc.stdint cimport uint64_t
+from uberhf.datafeed.quotes_cache cimport QCRecord
+
 
 cdef class FIXNewOrderSingle:
-    cdef FIXBinaryMsg msg
-    cdef object q
-    cdef object _clord_cached
-    cdef object _price_cached
-    cdef object _qty_cached
-    cdef object _side_cached
+    cdef FIXMsgStruct * msg
+    cdef uint64_t clord_id
+    cdef double price
+    cdef int side
+    cdef double qty
+    cdef double cum_qty
+    cdef double leaves_qty
 
-    cpdef FIXBinaryMsg cancel_req(self, bytes req_clord_id)
 
-cdef class FIXNewOrderSinglePy:
-    cdef readonly double qty
-    cdef readonly double px
-    cdef readonly bytes clord_id
-    cdef bytes account
-    cdef object q
+    @staticmethod
+    cdef FIXNewOrderSingle create(QCRecord * q,
+                                  int account_id,
+                                  double price,
+                                  double qty,
+                                  char order_type,
+                                  char time_in_force,
+                                  )
+
+    cdef FIXMsgStruct * cancel_req(self)
+
+
+
+

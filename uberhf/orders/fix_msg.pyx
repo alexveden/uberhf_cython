@@ -27,7 +27,7 @@ DEF TAG_NEED_RESIZE = 	65532 # USHRT_MAX-3
 DEF ERR_NOT_FOUND              =  0
 DEF ERR_FIX_DUPLICATE_TAG      = -1
 DEF ERR_FIX_TYPE_MISMATCH      = -2
-DEF ERR_FIX_VALUE_TOOLONG      = -3
+DEF ERR_FIX_VALUE_ERROR        = -3
 DEF ERR_FIX_NOT_ALLOWED        = -4
 DEF ERR_FIX_ZERO_TAG           = -5
 DEF ERR_DATA_OVERFLOW          = -6
@@ -56,7 +56,7 @@ cdef class FIXMsg:
             return NULL
         if tag_tree_capacity == 0:
             return NULL
-        cdef FIXMsgStruct * self = <FIXMsgStruct *> malloc(_calc_data_size(data_size, tag_tree_capacity))                                          # Value storage size
+        cdef FIXMsgStruct * self = <FIXMsgStruct *> malloc(_calc_data_size(data_size, tag_tree_capacity))   # Value storage size
 
         if self == NULL:
             return NULL
@@ -95,6 +95,55 @@ cdef class FIXMsg:
             free(self)
 
     @staticmethod
+    cdef size_t size(FIXMsgStruct * self) nogil:
+        """
+        Calculates full FIXMsg size in bytes
+        :param self: 
+        :return: 0 on error
+        """
+        if self == NULL or self.header.data_size == 0 or self.header.tags_capacity == 0:
+            return 0
+        return _calc_data_size(self.header.data_size, self.header.tags_capacity)
+
+    @staticmethod
+    cdef FIXMsgStruct * copy(FIXMsgStruct * self) nogil:
+        """
+        Creates a copy of the FIXMsgStruct * self
+        
+        :param self: 
+        :return: NULL on error 
+        """
+        cdef size_t size = FIXMsg.size(self)
+        if size == 0:
+            return NULL
+
+        cdef void * buf = malloc(size)
+        if buf == NULL:
+            # Memory error!
+            return NULL
+
+        memcpy(buf, <void*>self, size)
+        return <FIXMsgStruct*>buf
+
+    @staticmethod
+    cdef FIXMsgStruct * check_buffer(void * buffer, size_t buf_len) nogil:
+        if buffer == NULL:
+            return NULL
+        if buf_len < sizeof(FIXMsgStruct):
+            return NULL
+
+        cdef FIXMsgStruct* m = <FIXMsgStruct*>buffer
+
+        if buf_len != FIXMsg.size(m):
+            return NULL
+
+        if not FIXMsg.is_valid(m):
+            return NULL
+
+        return m
+
+
+    @staticmethod
     cdef int get_last_error(FIXMsgStruct * self) nogil:
         """
         Last error returned by primitive type get operation
@@ -118,7 +167,7 @@ cdef class FIXMsg:
             return b'Duplicated tag'
         elif e == ERR_FIX_TYPE_MISMATCH:
             return b'Tag type mismatch'
-        elif e == ERR_FIX_VALUE_TOOLONG:
+        elif e == ERR_FIX_VALUE_ERROR:
             return b'Value size exceeds 1024 limit'
         elif e == ERR_FIX_NOT_ALLOWED:
             return b'FIX(35) tag or type value is not allowed'
@@ -172,6 +221,8 @@ cdef class FIXMsg:
         - no tag errors
         - no currently open groups
         - valid msg type > 0
+        - zero tags capacity
+        - zero data size capacity
         :return:
         """
         cdef uint16_t * magic_middle = _calc_offset_magic_middle(self)
@@ -183,6 +234,7 @@ cdef class FIXMsg:
                 self.header.tag_errors == 0 and
                 self.open_group == NULL and
                 self.header.msg_type > 0 and
+                self.header.data_size > 0 and
                 self.header.tags_capacity > 0 and
                 magic_middle[0] == FIX_MAGIC and
                 magic_end[0] == FIX_MAGIC
@@ -458,6 +510,8 @@ cdef class FIXMsg:
                            types b'\x07' and '\x00' are not allowed, and reserved!
         :return: negative on error, positive on success
         """
+        if value == NULL:
+            return ERR_FIX_VALUE_ERROR
         if self.header.is_read_only == 1:
             return ERR_DATA_READ_ONLY
         if self.open_group != NULL:
@@ -481,7 +535,7 @@ cdef class FIXMsg:
         if value_size > 1024:
             # Set message as invalid, because we have failed to add new tag
             self.header.tag_errors += 1
-            return ERR_FIX_VALUE_TOOLONG
+            return ERR_FIX_VALUE_ERROR
 
         cdef int rc = 0
         cdef uint16_t last_position = self.header.last_position
@@ -594,6 +648,34 @@ cdef class FIXMsg:
         value_size[0] = rec.value_len
         value[0] = self.values + data_offset + sizeof(FIXRec)
         return 1
+
+    @staticmethod
+    cdef int replace(FIXMsgStruct * self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil:
+        """
+        Replaces **existing** tag value in the FIXMsg only if `value_type` match and `value_size` match
+         
+        :param self: FIXMsgStruct
+        :param tag: required tag
+        :param value: tag value
+        :param value_size: tag value size
+        :param value_type: tag value type
+        :return: positive on success, negative on error, or zero if tag doesn't exist
+        """
+        cdef void *msg_value = NULL
+        cdef uint16_t msg_value_size = 0
+        cdef int rc = FIXMsg.get(self, tag, &msg_value, &msg_value_size, value_type)
+
+        if rc > 0:
+            if msg_value_size != value_size:
+                return ERR_UNEXPECTED_TYPE_SIZE
+            cyassert(msg_value != NULL)
+            # Use memmove, because we don't know exactly if memory addresses overlap or not, just for safety
+            memmove(msg_value, value, value_size)
+            return 1
+        else:
+            # Error!
+            return rc
+
 
     @staticmethod
     cdef int group_start(FIXMsgStruct * self, uint16_t group_tag, uint16_t grp_n_elements, uint16_t n_tags, uint16_t *tags) nogil:
@@ -769,7 +851,7 @@ cdef class FIXMsg:
             return ERR_UNEXPECTED_TYPE_SIZE
         if value_size > 1024:
             self.header.tag_errors += 1
-            return ERR_FIX_VALUE_TOOLONG
+            return ERR_FIX_VALUE_ERROR
 
         if group_tag != self.open_group.fix_rec.tag:
             self.header.tag_errors += 1

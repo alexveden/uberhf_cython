@@ -88,6 +88,15 @@ cdef class FIXMsg:
     cdef void destroy(FIXMsgStruct * self) nogil
 
     @staticmethod
+    cdef size_t size(FIXMsgStruct * self) nogil
+
+    @staticmethod
+    cdef FIXMsgStruct * copy(FIXMsgStruct * self) nogil
+
+    @staticmethod
+    cdef FIXMsgStruct * check_buffer(void * buffer, size_t buf_len) nogil
+
+    @staticmethod
     cdef int get_last_error(FIXMsgStruct * self) nogil
 
     @staticmethod
@@ -104,6 +113,9 @@ cdef class FIXMsg:
 
     @staticmethod
     cdef int get(FIXMsgStruct * self, uint16_t tag, void ** value, uint16_t * value_size, char value_type) nogil
+
+    @staticmethod
+    cdef int replace(FIXMsgStruct * self, uint16_t tag, void * value, uint16_t value_size, char value_type) nogil
 
     @staticmethod
     cdef uint16_t _set_tag_offset(FIXMsgStruct * self, uint16_t tag, uint16_t tag_offset) nogil
