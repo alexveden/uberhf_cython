@@ -40,7 +40,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         o = FIXNewOrderSingle.create(&q, 1010, 100, -20)
         assert isinstance(o, FIXNewOrderSingle)
         assert o.q == &q
-        assert o.status == FIX_OS_CREA
+        assert o.status == 0
         assert o.price == 100
         assert o.qty == 20
         assert o.leaves_qty == 0
@@ -116,7 +116,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         o = FIXNewOrderSingle.create(&q, 1010, 200, 20, target_price=220, order_type=b'm', time_in_force=b'1')
         assert isinstance(o, FIXNewOrderSingle)
         assert o.q == &q
-        assert o.status == FIX_OS_CREA
+        assert o.status == 0
         assert o.price == 200
         assert o.qty == 20
         assert o.leaves_qty == 0
@@ -183,7 +183,6 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
     def test_simple_execution_report_state_created__2__pending_new(self):
         o = FIXNewOrderSingle.create(&q, 1010, 200, 20)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -198,7 +197,6 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
     def test_simple_execution_report_state_created__2__rejected(self):
         o = FIXNewOrderSingle.create(&q, 1010, 200, 20)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -479,8 +477,6 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         :return:
         """
         o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
-
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
         assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
@@ -577,7 +573,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         :return:
         """
         o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+        assert o.status == 0, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -615,7 +611,6 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         :return:
         """
         o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -664,7 +659,6 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         :return:
         """
         o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
-        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -791,21 +785,53 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert FIXMsg.is_valid(m) == 1
 
 
-    def test_cancel_req(self):
+    def test_cancel_req__zero_filled_order(self):
         assert V2_TICKER_MAX_LEN == 40
         cdef QCRecord q
         #                           b'OC.RU.<F.RTS.H21>.202123@12934'
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -20)
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
-        assert FIXMsg.is_valid(o.msg) == 1
-        o.status = FIX_OS_NEW
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
 
-        cdef FIXMsgStruct * m = o.cancel_req()
-        assert m != NULL
-        assert ft.order_register_cxlrep(o, m)
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_cxl_request(o)
+        assert o.status == FIX_OS_PCXL
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_CXL,
+                                     FIX_OS_CXL,
+                                     cum_qty=0,
+                                     leaves_qty=0
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.qty == 10
+        assert o.cum_qty == 0
+        assert o.leaves_qty == 0
+
+        assert o.can_replace() < 0
+        assert o.can_cancel() < 0
+        assert o.is_finished() == 1
 

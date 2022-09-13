@@ -36,7 +36,7 @@ cdef class FIXNewOrderSingle:
         self.cum_qty = 0
         self.leaves_qty = 0
         self.side = 1 if qty > 0 else -1
-        self.status = FIX_OS_CREA
+        self.status = 0  # Will be set at self.register()!
         self.clord_id = 0
         self.orig_clord_id = 0
         if not isfinite(target_price):
@@ -176,42 +176,55 @@ cdef class FIXNewOrderSingle:
 
         return cxl_req_msg
 
-    cdef int register(self, uint64_t clord_id, uint64_t orig_clord_id):
+    cdef int register(self, uint64_t clord_id, char ord_status):
         """
         Registers new order action
 
-        - New order placements (clord_id, 0)
-        - Cancel/replaces      (new_clord, clord_id)  
+        - New order placements (clord_id, FIX_OS_CREA)
+        - Cancel     (new_clord, FIX_OS_PCXL)
+        - Replace    (new_clord, FIX_OS_PREP)
 
         :param clord_id: 
-        :param orig_clord_id: 
+        :param ord_status:  new order status 
         :return: 
         """
         cdef int rc = 0
         if self.clord_id == 0:
             # New order
-
-            assert (orig_clord_id == 0)  # Expected always to be zero for new orders
             if clord_id == 0:
                 return -3  # ERR_FIX_VALUE_ERROR
+            if self.status != 0:
+                # Order status must be = 0!
+                return -23 # ERR_STATE_TRANSITION       = -23
+            if ord_status != FIX_OS_CREA:
+                return -23  # ERR_STATE_TRANSITION       = -23
+
 
             # Keep initial ClOrdId in the FIX Msg, and it won't change after replaces
             rc = FIXMsg.replace(self.msg, 11, &clord_id, sizeof(uint64_t), b'L')
             if rc <= 0:
                 return rc
-
+            self.status = ord_status
             self.clord_id = clord_id
             return 1
         else:
             if self.orig_clord_id != 0:
                 # Something is pending now, it's not allowed to replace
                 return -23  # DEF ERR_STATE_TRANSITION       = -23
-            if self.clord_id != orig_clord_id:
-                # When replacing/cancelling orig_clord_id must match
-                return -3  # ERR_FIX_VALUE_ERROR
             if clord_id == 0:
                 # Bad value
                 return -3  # ERR_FIX_VALUE_ERROR
+
+            if ord_status == FIX_OS_PCXL:
+                if not self.can_cancel():
+                    return -23  # DEF ERR_STATE_TRANSITION       = -23
+                self.status = FIX_OS_PCXL
+            elif ord_status == FIX_OS_PREP:
+                if not self.can_replace():
+                    return -23  # DEF ERR_STATE_TRANSITION       = -23
+                self.status = FIX_OS_PREP
+            else:
+                return -23  # DEF ERR_STATE_TRANSITION       = -23
 
             # We don't change FIX msg clord_id, it will remain as ID for the whole order lifetime
             self.orig_clord_id = self.clord_id
