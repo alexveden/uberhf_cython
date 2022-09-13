@@ -171,7 +171,7 @@ cdef class FIXMsg:
         elif e == ERR_FIX_VALUE_ERROR:
             return b'Value size exceeds 1024 limit'
         elif e == ERR_FIX_NOT_ALLOWED:
-            return b'FIX(35) tag or type value is not allowed'
+            return b'Tag or type value or operation is not allowed'
         elif e == ERR_FIX_ZERO_TAG:
             return b'FIX tag=0 is not allowed'
         elif e == ERR_DATA_OVERFLOW:

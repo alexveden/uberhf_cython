@@ -199,10 +199,160 @@ cdef class FIXNewOrderSingle:
             self.clord_id = clord_id
             return 1
 
+    @staticmethod
+    cdef char change_status(char status, char fix_msg_type, char msg_exec_type, char msg_status):
+        """
+        FIX Order Strate transition algo
+        
+        :param status: current order status 
+        :param fix_msg_type: incoming/or requesting order type,  these are supported:
+                '8' - execution report, 
+                '9' - Order Cancel reject,
+                'F' - Order cancel request (for checking if possible to cancel current order)
+                'G' -  Order replace request (for checking if possible to replace current order)
+        :param msg_exec_type: (only for execution report), for other should be 0
+        :param msg_status: new fix msg order status, or required status
+        :return: positive if state transition is possible, 
+                 zero if transition is valid, but need to wait for a good state
+                 negative on error, error -23 means FIX order status is not expected
+        """
+        if fix_msg_type == b'8':  # Execution report
+            if status == FIX_OS_CREA:
+                # CREATED -> (PendingNew, Rejected)
+                if msg_status == FIX_OS_PNEW:
+                    return FIX_OS_PNEW
+                elif msg_status == FIX_OS_REJ:
+                    return FIX_OS_REJ
+                else:
+                    return -23 #ERR_STATE_TRANSITION
+            elif status == FIX_OS_PNEW:
+                # PendingNew -> (Rejected, New, Filled, Canceled)
+                if msg_status == FIX_OS_REJ:
+                    return FIX_OS_REJ
+                elif msg_status == FIX_OS_NEW:
+                    return FIX_OS_NEW
+                elif msg_status == FIX_OS_FILL:
+                    return FIX_OS_FILL
+                elif msg_status == FIX_OS_PFILL:
+                    return FIX_OS_PFILL
+                elif msg_status == FIX_OS_CXL:
+                    return FIX_OS_CXL
+                elif msg_status == FIX_OS_SUSP:
+                    return FIX_OS_SUSP
+                else:
+                    return -23 #ERR_STATE_TRANSITION
+            elif status == FIX_OS_NEW:
+                # New -> (Rejected, New, Suspended, PartiallyFilled, Filled, Canceled, Expired, DFD)
+                if msg_status == FIX_OS_PNEW or msg_status == FIX_OS_CREA or msg_status == FIX_OS_ACCPT:
+                    return -23 #ERR_STATE_TRANSITION
+                elif msg_status == FIX_OS_NEW:
+                    # Reinstatement, allowed but not trigger state change
+                    return 0
+                return msg_status
+            elif status == FIX_OS_FILL or status == FIX_OS_CXL or \
+                    status == FIX_OS_REJ or status == FIX_OS_EXP:
+                # Order in terminal state - no status change allowed!
+                return 0
+            elif status == FIX_OS_SUSP:
+                # Order algorithmically was suspended
+                if msg_status == FIX_OS_NEW:
+                    return FIX_OS_NEW
+                elif msg_status == FIX_OS_PFILL:
+                    return FIX_OS_PFILL
+                elif msg_status == FIX_OS_CXL:
+                    return FIX_OS_CXL
+                elif msg_status == FIX_OS_SUSP:
+                    # Possible duplidates or delayed fills
+                    return 0
+                else:
+                    return -23 #ERR_STATE_TRANSITION
+            elif status == FIX_OS_PFILL:
+                if msg_status == FIX_OS_FILL:
+                    return FIX_OS_FILL
+                elif msg_status == FIX_OS_PFILL:
+                    return FIX_OS_PFILL
+                elif msg_status == FIX_OS_PREP:
+                    return FIX_OS_PREP
+                elif msg_status == FIX_OS_PCXL:
+                    return FIX_OS_PCXL
+                elif msg_status == FIX_OS_CXL:
+                    return FIX_OS_CXL
+                elif msg_status == FIX_OS_EXP:
+                    return FIX_OS_EXP
+                elif msg_status == FIX_OS_SUSP:
+                    return FIX_OS_SUSP
+                elif msg_status == FIX_OS_STP:
+                    return FIX_OS_STP
+
+                else:
+                    return -23 #ERR_STATE_TRANSITION
+            elif status == FIX_OS_PCXL:
+                if msg_status == FIX_OS_CXL:
+                    return FIX_OS_CXL
+                elif msg_status == FIX_OS_CREA:
+                    return -23  #ERR_STATE_TRANSITION
+                else:
+                    return 0
+            elif status == FIX_OS_PREP:
+                if msg_exec_type == FIX_ET_REP:
+                    # Successfully replaced
+                    if msg_status == FIX_OS_NEW or msg_status == FIX_OS_PFILL \
+                            or msg_status == FIX_OS_FILL or msg_status == FIX_OS_CXL:
+                        return msg_status
+                    else:
+                        return -23  #ERR_STATE_TRANSITION
+                else:
+                    if msg_status == FIX_OS_CREA or msg_status == FIX_OS_ACCPT:
+                        return -23  #ERR_STATE_TRANSITION
+                    else:
+                        # Technically does not count any status,
+                        # until get replace reject or exec_type = FIX_ET_REP
+                        return 0
+
+            else:
+                return -23 #ERR_STATE_TRANSITION
+
+        elif fix_msg_type == b'9': # Order Cancel reject
+            cyassert(msg_exec_type == 0)
+            if msg_status == FIX_OS_CREA or msg_status == FIX_OS_ACCPT:
+                return -23  #ERR_STATE_TRANSITION
+            return msg_status
+        elif fix_msg_type == b'F' or fix_msg_type == b'G':
+            # 'F' - Order cancel request (order requests self cancel)
+            # 'G' -  Order replace request (order requests self change)
+            if status == FIX_OS_PCXL or status == FIX_OS_PREP:
+                # Status is pending, we must wait
+                return 0
+            elif status == FIX_OS_NEW or status == FIX_OS_SUSP or status == FIX_OS_PFILL:
+                # Order is active and good for cancel/replacement
+                return status
+            else:
+                return -23 #ERR_STATE_TRANSITION
+        else:
+            return -4 # ERR_FIX_NOT_ALLOWED
+
     cdef int process_execution_report(self, FIXMsgStruct * m):
         assert (self.clord_id != 0) # Must be registered
 
-        return 1
+        cdef char * order_status = FIXMsg.get_char(m, 39)
+        if order_status == NULL:
+            return FIXMsg.get_last_error(m)
+
+        cdef char * exec_type = FIXMsg.get_char(m, 150)
+        if exec_type == NULL:
+            return FIXMsg.get_last_error(m)
+
+        cdef char new_status = FIXNewOrderSingle.change_status(self.status,
+                                                               m.header.msg_type,
+                                                               exec_type[0],
+                                                               order_status[0])
+        if new_status > 0:
+            self.status = new_status
+            return 1
+        else:
+            # TODO: possible error or just status change not allowed
+            return 0
+
 
     def __dealloc__(self):
         if self.msg != NULL:

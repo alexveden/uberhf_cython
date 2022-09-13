@@ -15,7 +15,7 @@ cdef extern from *:
     #define FIX_OS_CXL         '4'
     #define FIX_OS_PCXL        '6'
     #define FIX_OS_STP         '7'
-    #define FIX_OS_REJ         '6'
+    #define FIX_OS_REJ         '8'
     #define FIX_OS_SUSP        '9'
     #define FIX_OS_PNEW        'A'
     #define FIX_OS_CALC        'B'
@@ -38,6 +38,7 @@ cdef extern from *:
     #define FIX_ET_PREP        'E'
     #define FIX_ET_TRADE       'F'
     #define FIX_ET_STATUS      'I'
+
     """
     const char FIX_OS_CREA        #Z#      // Non-FIX type, only for internal use!
     const char FIX_OS_NEW         #0#
@@ -47,7 +48,7 @@ cdef extern from *:
     const char FIX_OS_CXL         #4#
     const char FIX_OS_PCXL        #6#
     const char FIX_OS_STP         #7#
-    const char FIX_OS_REJ         #6#
+    const char FIX_OS_REJ         #8#
     const char FIX_OS_SUSP        #9#
     const char FIX_OS_PNEW        #A#
     const char FIX_OS_CALC        #B#
@@ -69,6 +70,8 @@ cdef extern from *:
     const char FIX_ET_PREP        #E#
     const char FIX_ET_TRADE       #F#
     const char FIX_ET_STATUS      #I#
+
+
 
 
 
@@ -97,6 +100,9 @@ cdef class FIXNewOrderSingle:
                                   )
 
     cdef int register(self, uint64_t clord_id, uint64_t orig_clord_id)
+
+    @staticmethod
+    cdef char change_status(char status, char fix_msg_type, char msg_exec_type, char msg_status)
 
     cdef int process_execution_report(self, FIXMsgStruct * m)
 
