@@ -46,6 +46,7 @@ DEF ERR_GROUP_CORRUPTED        = -19
 DEF ERR_UNEXPECTED_TYPE_SIZE   = -20
 DEF ERR_RESIZE_REQUIRED        = -21
 DEF ERR_DATA_READ_ONLY         = -22
+DEF ERR_STATE_TRANSITION       = -23
 
 
 cdef class FIXMsg:
@@ -207,6 +208,8 @@ cdef class FIXMsg:
             return b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity'
         elif e == ERR_DATA_READ_ONLY:
             return b'Message is read-only'
+        elif e == ERR_STATE_TRANSITION:
+            return b'Incorrect order state transition order, or already something pending.'
 
         return b'unknown error code'
 

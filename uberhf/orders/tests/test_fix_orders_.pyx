@@ -19,7 +19,14 @@ from uberhf.orders.fix_orders cimport FIX_OS_CREA, FIX_OS_NEW, FIX_OS_FILL, FIX_
 from uberhf.datafeed.quotes_cache cimport QCRecord
 from uberhf.orders.fix_msg cimport FIXMsg, FIXMsgStruct
 from uberhf.includes.uhfprotocols cimport V2_TICKER_MAX_LEN
+from uberhf.orders.fix_tester cimport FIXTester, FIXMsgC
 
+assert V2_TICKER_MAX_LEN == 40
+cdef QCRecord q
+#                           b'OC.RU.<F.RTS.H21>.202123@12934'
+assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+q.ticker_index = 10
+q.instrument_id = 123
 
 class CyFIXOrdersTestCase(unittest.TestCase):
     def test_init_order_single_default_short(self):
@@ -174,3 +181,17 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         # Overall message is valid!
         assert FIXMsg.is_valid(m) == 1
 
+    def test_simple_execution_report_pending_new(self):
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 20, target_price=220, order_type=b'm', time_in_force=b'1')
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PNEW, f'o.status={chr(o.status)}'

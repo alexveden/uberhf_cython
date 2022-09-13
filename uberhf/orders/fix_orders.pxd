@@ -1,5 +1,6 @@
 from .fix_msg cimport FIXMsgStruct, FIXMsg
 from uberhf.datafeed.quote_info import QuoteInfo
+
 from libc.stdint cimport uint64_t
 from uberhf.datafeed.quotes_cache cimport QCRecord
 
@@ -94,6 +95,10 @@ cdef class FIXNewOrderSingle:
                                   char order_type = *,
                                   char time_in_force = *,
                                   )
+
+    cdef int register(self, uint64_t clord_id, uint64_t orig_clord_id)
+
+    cdef int process_execution_report(self, FIXMsgStruct * m)
 
     cdef FIXMsgStruct * cancel_req(self)
 
