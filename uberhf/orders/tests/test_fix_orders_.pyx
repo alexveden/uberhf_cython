@@ -470,3 +470,81 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert FIXNewOrderSingle.change_status(FIX_OS_PREP, b'9', 0, FIX_OS_EXP) == FIX_OS_EXP
         assert FIXNewOrderSingle.change_status(FIX_OS_PREP, b'9', 0, FIX_OS_ACCPT) == -23
         assert FIXNewOrderSingle.change_status(FIX_OS_PREP, b'9', 0, FIX_OS_PREP) == FIX_OS_PREP
+
+    def test_exec_sequence__vanilla_fill(self):
+        """
+
+        https://www.fixtrading.org/online-specification/order-state-changes/#a-vanilla-1
+
+        :return:
+        """
+        o = FIXNewOrderSingle.create(&q, 1010, 200, qty=10)
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PNEW, f'o.status={chr(o.status)}'
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_NEW, f'o.status={chr(o.status)}'
+        assert o.qty == 10
+        assert o.cum_qty == 0
+        assert o.leaves_qty == 10
+
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_PFILL,
+                                     cum_qty=2,
+                                     leaves_qty=8,
+                                     last_qty=2
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PFILL, f'o.status={chr(o.status)}'
+        assert o.qty == 10
+        assert o.cum_qty == 2
+        assert o.leaves_qty == 8
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_PFILL,
+                                     cum_qty=3,
+                                     leaves_qty=7,
+                                     last_qty=1
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PFILL, f'o.status={chr(o.status)}'
+        assert o.qty == 10
+        assert o.cum_qty == 3
+        assert o.leaves_qty == 7
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=10,
+                                     leaves_qty=0,
+                                     last_qty=7
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_FILL, f'o.status={chr(o.status)}'
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+

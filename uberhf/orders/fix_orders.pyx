@@ -342,10 +342,29 @@ cdef class FIXNewOrderSingle:
         if exec_type == NULL:
             return FIXMsg.get_last_error(m)
 
+                #if exec_type[0] == FIX_ET_TRADE:
+        cdef double * cum_qty = FIXMsg.get_double(m, 14)  # tag 14: cum qty
+        if cum_qty == NULL:
+            return FIXMsg.get_last_error(m)
+
+        cdef double * order_qty  = FIXMsg.get_double(m, 38)  # tag 38: order qty
+        if order_qty == NULL:
+            return FIXMsg.get_last_error(m)
+        cdef double * leaves_qty = FIXMsg.get_double(m, 151) # tag 151: leaves qty
+        if leaves_qty == NULL:
+            return FIXMsg.get_last_error(m)
+
+
         cdef char new_status = FIXNewOrderSingle.change_status(self.status,
                                                                m.header.msg_type,
                                                                exec_type[0],
                                                                order_status[0])
+
+        self.qty = order_qty[0]
+        self.leaves_qty = leaves_qty[0]
+        self.cum_qty = cum_qty[0]
+
+
         if new_status > 0:
             self.status = new_status
             return 1

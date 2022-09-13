@@ -86,6 +86,7 @@ cdef class FIXTester(OMSAbstract):
             assert leaves_qty >= 0
             assert leaves_qty <= order.qty
         assert FIXMsg.set_double(m, 151, leaves_qty) == 1
+        assert cum_qty + leaves_qty <= order_qty, f'cum_qty[{cum_qty}] + leaves_qty[{leaves_qty}] <= order_qty[{order_qty}]'
 
         if not isnan(last_qty):
             assert not isnan(leaves_qty), f'Must also set leaves_qty, when trade'
@@ -93,6 +94,11 @@ cdef class FIXTester(OMSAbstract):
             assert exec_type == b'F', 'Only applicable to exec_type=F (trade)'
             assert last_qty > 0
             assert FIXMsg.set_double(m, 32, last_qty) == 1
+
+            assert last_qty == cum_qty-order.cum_qty, f'Probably incorrect Trade qty'
+        else:
+            assert exec_type != b'F', 'You must set last_qty when exec_type=F (trade)'
+
 
         if not isnan(price):
             assert exec_type == b'5', f'Only applicable to exec_type=5 (replace)'
