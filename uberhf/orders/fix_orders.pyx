@@ -107,55 +107,74 @@ cdef class FIXNewOrderSingle:
 
         return self
 
-
     cdef FIXMsgStruct * cancel_req(self):
-        return NULL
-        # cdef FIXBinaryMsg cxl_msg = FIXBinaryMsg(<char> b'F', 200, 10)
-        #
-        # # Tag 11: ClOrdID
-        # cdef int clord_len = len(req_clord_id)
-        # if clord_len == 0 or clord_len >= 20:
-        #     raise FIXMessageError(11, f'clord_id length must be > 0 and < 20 chars, got {clord_len}')
-        # rc = cxl_msg.set_str(11, req_clord_id, clord_len)
-        # if rc <= 0:
-        #     raise FIXMessageError(11, cxl_msg.get_last_error_str(rc))
-        #
-        # # Tag 38: Order Qty
-        # rc = cxl_msg.set_double(38, self.qty)
-        # if rc <= 0:
-        #     raise FIXMessageError(38, cxl_msg.get_last_error_str(rc))
-        #
-        # # Tag 41: OrigClOrdID
-        # cdef char * orig_clord = self.msg.get_str(11)
-        # if orig_clord == NULL:
-        #     raise FIXMessageError(41, self.msg.get_last_error_str(self.msg.get_last_error()))
-        # rc = cxl_msg.set_str(41, orig_clord, clord_len)
-        # if rc <= 0:
-        #     if rc == -20:
-        #         # ERR_UNEXPECTED_TYPE_SIZE
-        #         # Highly likely len(orig_clord) != len(req_clord_id)
-        #         #  This is unexpected behaviour, all ClOrdIDs must be with the same len
-        #         raise FIXMessageError(41, b'Possible len(orig_clord) != len(req_clord_id), all ClOrdID must have the same length')
-        #     else:
-        #         raise FIXMessageError(41, cxl_msg.get_last_error_str(rc))
-        #
-        # # Tag 54: Side
-        # cdef char * side = self.msg.get_char(54)
-        # if side == NULL:
-        #     raise FIXMessageError(54, self.msg.get_last_error_str(self.msg.get_last_error()))
-        # cxl_msg.set_char(54, side[0])
-        #
-        # # Tag 60: Transact time
-        # rc = cxl_msg.set_utc_timestamp(60, datetime_nsnow())
-        # if rc <= 0:
-        #     raise FIXMessageError(60, cxl_msg.get_last_error_str(rc))
-        #
-        # # TODO: set instrument info
-        # # Tag 55: Symbol set to v2 symbol? -- it's going to be stable
-        # # Tag 48: SecurityID - set to instrument_info (uint64_t instrument_id) -- it's going to be stable
-        # # Tag 22: SecurityIDSource - quote cache ticker index - may be dynamic and actual during short time (not reliable but fast!)
-        #
-        # return cxl_msg
+        cdef int rc = 0
+        self.last_fix_error = 1
+        rc = self.can_cancel()
+        if rc <= 0:
+            # Something wrong with order state
+            self.last_fix_error = rc
+            return NULL
+
+        if self.orig_clord_id != 0:
+            # DEF ERR_STATE_TRANSITION       = -23
+            self.last_fix_error = -23
+            return NULL
+
+        cdef FIXMsgStruct * cxl_req_msg = FIXMsg.create(<char> b'F', 133, 8)
+        if cxl_req_msg == NULL:
+            self.last_fix_error = -7 # DEF ERR_MEMORY_ERROR           = -7
+            return NULL
+
+        # Tag 11: ClOrdID
+        rc = FIXMsg.set_uint64(cxl_req_msg, 11, 0)
+        if rc <= 0:
+            raise FIXMessageError(11, FIXMsg.get_last_error_str(rc))
+
+        # <INSTRUMENT> Tag 22: SecurityIDSource - quote cache ticker index
+        #   it may be dynamic and actual during short time (not reliable but fast!)
+        rc = FIXMsg.set_int(cxl_req_msg, 22, self.q.ticker_index)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 38: Order Qty
+        rc = FIXMsg.set_double(cxl_req_msg, 38, self.qty)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 41: OrigClOrdID
+        rc = FIXMsg.set_uint64(cxl_req_msg, 41, self.clord_id)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # <INSTRUMENT> Tag 48: SecurityID - set to instrument_info (uint64_t instrument_id) -- it's going to be stable
+        rc = FIXMsg.set_uint64(cxl_req_msg, 48, self.q.instrument_id)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 54: Side
+        rc = FIXMsg.set_char(cxl_req_msg, 54, b'1' if self.side > 0 else b'2')
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # <INSTRUMENT> Tag 55: Symbol set to v2 symbol
+        rc = FIXMsg.set_str(cxl_req_msg, 55, self.q.v2_ticker, 0)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 60: Transact time
+        rc = FIXMsg.set_utc_timestamp(cxl_req_msg, 60, datetime_nsnow())
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        return cxl_req_msg
 
     cdef int register(self, uint64_t clord_id, uint64_t orig_clord_id):
         """
@@ -318,6 +337,7 @@ cdef class FIXNewOrderSingle:
                 return -23  #ERR_STATE_TRANSITION
             return msg_status
         elif fix_msg_type == b'F' or fix_msg_type == b'G':
+            cyassert(msg_exec_type == 0)
             # 'F' - Order cancel request (order requests self cancel)
             # 'G' -  Order replace request (order requests self change)
             if status == FIX_OS_PCXL or status == FIX_OS_PREP:
@@ -330,6 +350,33 @@ cdef class FIXNewOrderSingle:
                 return -23 #ERR_STATE_TRANSITION
         else:
             return -4 # ERR_FIX_NOT_ALLOWED
+
+    cdef int is_finished(self):
+        """
+        Check if order is in terminal state (no subsequent changes expected)
+        
+        :return: 1 on success, 0 if active or will be able to activate later, < 0 - on error
+        """
+        if self.status == FIX_OS_FILL or self.status == FIX_OS_CXL or self.status == FIX_OS_REJ or self.status == FIX_OS_EXP:
+            return 1
+        else:
+            return 0
+
+    cdef int can_cancel(self):
+        """
+        Check if order can be canceled from its current state
+        
+        :return: 0 if already pending cancel/replace, >1 - good to cancel, -23 - incorrect order transition
+        """
+        return <int>FIXNewOrderSingle.change_status(self.status, b'F', 0, FIX_OS_PCXL)
+
+    cdef int can_replace(self):
+        """
+        Check if order can be replaced from its current state
+        
+        :return: 0 if already pending cancel/replace, >1 - good to cancel, -23 - incorrect order transition
+        """
+        return <int>FIXNewOrderSingle.change_status(self.status, b'G', 0, FIX_OS_PREP)
 
     cdef int process_execution_report(self, FIXMsgStruct * m):
         assert (self.clord_id != 0) # Must be registered

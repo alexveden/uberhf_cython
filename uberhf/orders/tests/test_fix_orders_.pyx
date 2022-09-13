@@ -484,6 +484,9 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
         assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+        assert o.can_cancel() < 0
+        assert o.can_replace() < 0
+        assert o.is_finished() == 0
 
         cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
                                                   o.clord_id,
@@ -491,6 +494,9 @@ class CyFIXOrdersTestCase(unittest.TestCase):
                                                   FIX_OS_PNEW)
         assert o.process_execution_report(msg.m) == 1
         assert o.status == FIX_OS_PNEW, f'o.status={chr(o.status)}'
+        assert o.can_cancel() < 0
+        assert o.can_replace() < 0
+        assert o.is_finished() == 0
 
         msg = ft.fix_exec_report_msg(o,
                                      o.clord_id,
@@ -504,6 +510,11 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.qty == 10
         assert o.cum_qty == 0
         assert o.leaves_qty == 10
+
+        assert o.can_cancel() > 0
+        assert o.can_replace() > 0
+        assert o.is_finished() == 0
+
 
 
         msg = ft.fix_exec_report_msg(o,
@@ -519,6 +530,11 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.qty == 10
         assert o.cum_qty == 2
         assert o.leaves_qty == 8
+
+        assert o.can_cancel() > 0
+        assert o.can_replace() > 0
+        assert o.is_finished() == 0
+
 
         msg = ft.fix_exec_report_msg(o,
                                      o.clord_id,
@@ -547,6 +563,10 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.qty == 10
         assert o.cum_qty == 10
         assert o.leaves_qty == 0
+
+        assert o.can_cancel() < 0
+        assert o.can_replace() < 0
+        assert o.is_finished() == 1
 
 
     def test_exec_sequence__vanilla_fill_reject__pendingnew(self):
@@ -582,6 +602,10 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.qty == 10
         assert o.cum_qty == 0
         assert o.leaves_qty == 00
+
+        assert o.can_cancel() < 0
+        assert o.can_replace() < 0
+        assert o.is_finished() == 1
 
     def test_exec_sequence__vanilla_fill__reject_new(self):
         """
@@ -694,6 +718,10 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.cum_qty == 2
         assert o.leaves_qty == 0
 
+        assert o.can_cancel() > 0
+        assert o.can_replace() > 0
+        assert o.is_finished() == 0
+
         msg = ft.fix_exec_report_msg(o,
                                      o.clord_id,
                                      FIX_ET_NEW,
@@ -707,4 +735,77 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.cum_qty == 2
         assert o.leaves_qty == 8
 
+    def test_cancel_req(self):
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+
+        o = FIXNewOrderSingle.create(&q, 1010, 100, -20)
+        assert FIXMsg.is_valid(o.msg) == 1
+        o.status = FIX_OS_NEW
+
+        cdef FIXMsgStruct * m = o.cancel_req()
+        assert m != NULL
+
+        self.assertEqual(m.header.msg_type, <char>b'F')
+
+        self.assertEqual(m.header.tags_count, 8)
+        self.assertEqual(m.header.data_size - m.header.last_position, 0)
+
+        # Tag 11: ClOrdID
+        assert FIXMsg.get_uint64(m, 11) != NULL
+        assert FIXMsg.get_uint64(m, 11)[0] == 0
+
+        # Tag 41: OrigClOrdID
+        assert FIXMsg.get_uint64(m, 41) != NULL
+        assert FIXMsg.get_uint64(m, 41)[0] == o.clord_id
+
+        # <INSTRUMENT> Tag 22: SecurityIDSource - quote cache ticker index
+        assert FIXMsg.get_int(m, 22) != NULL
+        assert FIXMsg.get_int(m, 22)[0] == 10
+
+        # Tag 38: Order Qty
+        assert FIXMsg.get_double(m, 38) != NULL
+        assert FIXMsg.get_double(m, 38)[0] == 20
+
+        # <INSTRUMENT> Tag 48: SecurityID - set to instrument_info (uint64_t instrument_id) -- it's going to be stable
+        assert FIXMsg.get_uint64(m, 48) != NULL
+        assert FIXMsg.get_uint64(m, 48)[0] == 123
+
+        # Tag 54: Side
+        assert FIXMsg.get_char(m, 54) != NULL
+        assert FIXMsg.get_char(m, 54)[0] == b'2'  # sell
+
+        # <INSTRUMENT> Tag 55: Symbol set to v2 symbol
+        assert FIXMsg.get_str(m, 55) != NULL
+        assert strcmp(FIXMsg.get_str(m, 55), q.v2_ticker) == 0
+
+        # Tag 60: Transact time
+        assert FIXMsg.get_utc_timestamp(m, 60) != NULL
+        assert timedelta_ns(datetime_nsnow(), FIXMsg.get_utc_timestamp(m, 60)[0], TIMEDELTA_MILLI) < 20
+
+        # Overall message is valid!
+        assert FIXMsg.is_valid(m) == 1
+
+
+    def test_cancel_req(self):
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+
+        o = FIXNewOrderSingle.create(&q, 1010, 100, -20)
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert FIXMsg.is_valid(o.msg) == 1
+        o.status = FIX_OS_NEW
+
+        cdef FIXMsgStruct * m = o.cancel_req()
+        assert m != NULL
+        assert ft.order_register_cxlrep(o, m)
 

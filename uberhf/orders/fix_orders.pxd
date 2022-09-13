@@ -87,6 +87,7 @@ cdef class FIXNewOrderSingle:
     cdef double cum_qty
     cdef double leaves_qty
     cdef char status
+    cdef int last_fix_error
 
 
     @staticmethod
@@ -105,6 +106,12 @@ cdef class FIXNewOrderSingle:
     cdef char change_status(char status, char fix_msg_type, char msg_exec_type, char msg_status)
 
     cdef int process_execution_report(self, FIXMsgStruct * m)
+
+    cdef int is_finished(self)
+
+    cdef int can_cancel(self)
+
+    cdef int can_replace(self)
 
     cdef FIXMsgStruct * cancel_req(self)
 

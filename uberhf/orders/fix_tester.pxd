@@ -10,6 +10,7 @@ cdef class FIXTester(OMSAbstract):
     cdef int _clord_id_cnt
 
     cdef int order_register_single(self, FIXNewOrderSingle o)
+    cdef int order_register_cxlrep(self, FIXNewOrderSingle order, FIXMsgStruct * m)
 
     cdef uint64_t order_gen_clord_id(self)
 

@@ -31,6 +31,20 @@ cdef class FIXTester(OMSAbstract):
         assert order.clord_id == clord_id
         return 1
 
+    cdef int order_register_cxlrep(self, FIXNewOrderSingle order, FIXMsgStruct * m):
+        assert m.header.msg_type == b'F' or m.header.msg_type == b'G'
+        cdef uint64_t new_clord_id = self.order_gen_clord_id()
+        cdef uint64_t * orig_clord_id = FIXMsg.get_uint64(m, 41)
+        assert orig_clord_id != NULL, f'Tag 41 not found?, rc: {FIXMsg.get_last_error(m)}'
+
+        assert order.clord_id != 0
+        assert order.clord_id == orig_clord_id[0]
+        rc = order.register(new_clord_id, orig_clord_id[0])
+        assert rc == 1, f'o.register(clord_id, orig_clord_id) failed, reason: {rc}'
+        assert order.clord_id == new_clord_id
+        assert order.orig_clord_id == orig_clord_id[0]
+        return 1
+
     cdef uint64_t order_gen_clord_id(self):
         self._clord_id_cnt += 1
         return self._clord_id_cnt
