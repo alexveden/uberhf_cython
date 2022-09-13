@@ -31,6 +31,7 @@ ctypedef struct QCSourceHeader:
 ctypedef struct QCRecord:
     char v2_ticker[V2_TICKER_MAX_LEN]
     uint64_t instrument_id
+    int ticker_index
     char data_source_id[TRANSPORT_SENDER_SIZE]
     int data_source_hidx
     uint64_t subscriptions_bits

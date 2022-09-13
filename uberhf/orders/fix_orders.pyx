@@ -1,6 +1,6 @@
 from uberhf.datafeed.quote_info import QuoteInfo
 from uberhf.includes.utils cimport datetime_nsnow
-from libc.math cimport isfinite
+from libc.math cimport isfinite, NAN
 
 class FIXMessageError(Exception):
     def __init__(self, tag, message):
@@ -15,8 +15,9 @@ cdef class FIXNewOrderSingle:
                                   int account_id,
                                   double price,
                                   double qty,
-                                  char order_type,
-                                  char time_in_force,
+                                  double target_price = NAN,
+                                  char order_type = b'2',
+                                  char time_in_force = b'0',
                                   ):
         if qty == 0:
             raise FIXMessageError(38, b'Zero qty')
@@ -27,8 +28,23 @@ cdef class FIXNewOrderSingle:
             raise FIXMessageError(44, b'price is nan')
 
         cdef FIXNewOrderSingle self = FIXNewOrderSingle()
+        self.q = q
+        self.price = price
+        self.qty = abs(qty)
+        self.cum_qty = 0
+        self.leaves_qty = 0
+        self.side = 1 if qty > 0 else -1
+        self.status = FIX_OS_CREA
+        self.clord_id = 0
+        self.orig_clord_id = 0
+        if not isfinite(target_price):
+            self.target_price = price
+        else:
+            self.target_price = target_price
 
-        self.msg = FIXMsg.create(<char> b'D', 200, 10)
+        self.msg = FIXMsg.create(<char> b'D', 157, 11)
+        if self.msg == NULL:
+            raise FIXMessageError(0, 'Error creating FIXMsg buffer, possible memory error')
         # IMPORTANT: adding in sequential order for the best performance
 
         # Tag 1: Account
@@ -36,10 +52,16 @@ cdef class FIXNewOrderSingle:
         if rc <= 0:
             raise FIXMessageError(1, FIXMsg.get_last_error_str(rc))
 
-        # # Tag 11: ClOrdID
-        # rc = FIXMsg.set_long(self.msg, 11, 0)
-        # if rc <= 0:
-        #     raise FIXMessageError(11, FIXMsg.get_last_error_str(rc))
+        # Tag 11: ClOrdID
+        rc = FIXMsg.set_uint64(self.msg, 11, 0)
+        if rc <= 0:
+            raise FIXMessageError(11, FIXMsg.get_last_error_str(rc))
+
+        # <INSTRUMENT> Tag 22: SecurityIDSource - quote cache ticker index
+        #   it may be dynamic and actual during short time (not reliable but fast!)
+        rc = FIXMsg.set_int(self.msg, 22, q.ticker_index)
+        if rc <= 0:
+            raise FIXMessageError(22, FIXMsg.get_last_error_str(rc))
 
         # Tag 38: Order Qty
         rc = FIXMsg.set_double(self.msg, 38, abs(qty))
@@ -56,10 +78,20 @@ cdef class FIXNewOrderSingle:
         if rc <= 0:
             raise FIXMessageError(44, FIXMsg.get_last_error_str(rc))
 
+        # <INSTRUMENT> Tag 48: SecurityID - set to instrument_info (uint64_t instrument_id) -- it's going to be stable
+        rc = FIXMsg.set_uint64(self.msg, 48, q.instrument_id)
+        if rc <= 0:
+            raise FIXMessageError(48, FIXMsg.get_last_error_str(rc))
+
         # Tag 54: Side
         rc = FIXMsg.set_char(self.msg, 54, b'1' if qty > 0 else b'2')
         if rc <= 0:
             raise FIXMessageError(54, FIXMsg.get_last_error_str(rc))
+
+        # <INSTRUMENT> Tag 55: Symbol set to v2 symbol
+        rc = FIXMsg.set_str(self.msg, 55, q.v2_ticker, 0)
+        if rc <= 0:
+            raise FIXMessageError(55, FIXMsg.get_last_error_str(rc))
 
         # Tag 59: Time in force
         rc = FIXMsg.set_char(self.msg, 59, time_in_force)
@@ -70,6 +102,9 @@ cdef class FIXNewOrderSingle:
         rc = FIXMsg.set_utc_timestamp(self.msg, 60, datetime_nsnow())
         if rc <= 0:
             raise FIXMessageError(60, FIXMsg.get_last_error_str(rc))
+
+        return self
+
 
     cdef FIXMsgStruct * cancel_req(self):
         return NULL
