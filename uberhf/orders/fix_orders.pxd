@@ -87,6 +87,7 @@ cdef class FIXNewOrderSingle:
     cdef double cum_qty
     cdef double leaves_qty
     cdef char status
+    cdef char ord_type
     cdef int last_fix_error
 
 
@@ -94,6 +95,7 @@ cdef class FIXNewOrderSingle:
     cdef FIXNewOrderSingle create(QCRecord * q,
                                   int account_id,
                                   double price,
+                                  int side,
                                   double qty,
                                   double target_price = *,
                                   char order_type = *,
@@ -116,6 +118,8 @@ cdef class FIXNewOrderSingle:
     cdef int can_replace(self)
 
     cdef FIXMsgStruct * cancel_req(self)
+
+    cdef FIXMsgStruct * replace_req(self, double price, double qty)
 
 
 

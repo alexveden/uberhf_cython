@@ -42,6 +42,7 @@ cdef class FIXTester(OMSAbstract):
         if m.header.msg_type == b'F':
             rc = order.register(m, new_clord_id, FIX_OS_PCXL)
         else:
+            assert m.header.msg_type == b'G'
             rc = order.register(m, new_clord_id, FIX_OS_PREP)
 
         assert rc == 1, f'o.register(clord_id, orig_clord_id) failed, reason: {rc}'
@@ -55,10 +56,15 @@ cdef class FIXTester(OMSAbstract):
 
     cdef FIXMsgC fix_cxl_request(self, FIXNewOrderSingle order):
         cdef FIXMsgStruct * m = order.cancel_req()
-        assert m != NULL
+        assert m != NULL, f'order.last_fix_error={order.last_fix_error}'
         assert self.order_register_cxlrep(order, m) == 1
         return FIXMsgC(<uint64_t>m)
 
+    cdef FIXMsgC fix_rep_request(self, FIXNewOrderSingle order, double price = NAN, double qty = NAN):
+        cdef FIXMsgStruct * m = order.replace_req(price, qty)
+        assert m != NULL, f'order.last_fix_error={order.last_fix_error}'
+        assert self.order_register_cxlrep(order, m) == 1
+        return FIXMsgC(<uint64_t>m)
 
     cdef FIXMsgC fix_cxlrep_reject_msg(self,
                                        FIXMsgC cancel_msg,

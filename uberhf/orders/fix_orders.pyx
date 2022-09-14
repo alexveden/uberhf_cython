@@ -1,6 +1,6 @@
 from uberhf.datafeed.quote_info import QuoteInfo
 from uberhf.includes.utils cimport datetime_nsnow
-from libc.math cimport isfinite, NAN
+from libc.math cimport isfinite, NAN, isnan
 from uberhf.includes.asserts cimport cyassert
 
 
@@ -16,29 +16,33 @@ cdef class FIXNewOrderSingle:
     cdef FIXNewOrderSingle create(QCRecord * q,
                                   int account_id,
                                   double price,
+                                  int side,
                                   double qty,
                                   double target_price = NAN,
                                   char order_type = b'2',
                                   char time_in_force = b'0',
                                   ):
-        if qty == 0:
-            raise FIXMessageError(38, b'Zero qty')
+        if qty <= 0:
+            raise FIXMessageError(38, b'Zero or negative qty')
         if not isfinite(qty):
             raise FIXMessageError(38, b'qty is nan')
         if not isfinite(price):
             # Zero price is allowed for spreads!
             raise FIXMessageError(44, b'price is nan')
+        if side != -1 and side != 1:
+            raise FIXMessageError(54, f'side must be -1 or 1, got {side}')
 
         cdef FIXNewOrderSingle self = FIXNewOrderSingle()
         self.q = q
         self.price = price
-        self.qty = abs(qty)
+        self.qty = qty
         self.cum_qty = 0
         self.leaves_qty = 0
-        self.side = 1 if qty > 0 else -1
+        self.side = side
         self.status = 0  # Will be set at self.register()!
         self.clord_id = 0
         self.orig_clord_id = 0
+        self.ord_type = order_type
         if not isfinite(target_price):
             self.target_price = price
         else:
@@ -75,6 +79,7 @@ cdef class FIXNewOrderSingle:
         if rc <= 0:
             raise FIXMessageError(40, FIXMsg.get_last_error_str(rc))
 
+
         # Tag 44: Order Price
         rc = FIXMsg.set_double(self.msg, 44, price)
         if rc <= 0:
@@ -86,7 +91,7 @@ cdef class FIXNewOrderSingle:
             raise FIXMessageError(48, FIXMsg.get_last_error_str(rc))
 
         # Tag 54: Side
-        rc = FIXMsg.set_char(self.msg, 54, b'1' if qty > 0 else b'2')
+        rc = FIXMsg.set_char(self.msg, 54, b'1' if side > 0 else b'2')
         if rc <= 0:
             raise FIXMessageError(54, FIXMsg.get_last_error_str(rc))
 
@@ -147,6 +152,102 @@ cdef class FIXNewOrderSingle:
 
         # Tag 41: OrigClOrdID
         rc = FIXMsg.set_uint64(cxl_req_msg, 41, self.clord_id)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # <INSTRUMENT> Tag 48: SecurityID - set to instrument_info (uint64_t instrument_id) -- it's going to be stable
+        rc = FIXMsg.set_uint64(cxl_req_msg, 48, self.q.instrument_id)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 54: Side
+        rc = FIXMsg.set_char(cxl_req_msg, 54, b'1' if self.side > 0 else b'2')
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # <INSTRUMENT> Tag 55: Symbol set to v2 symbol
+        rc = FIXMsg.set_str(cxl_req_msg, 55, self.q.v2_ticker, 0)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 60: Transact time
+        rc = FIXMsg.set_utc_timestamp(cxl_req_msg, 60, datetime_nsnow())
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        return cxl_req_msg
+
+    cdef FIXMsgStruct * replace_req(self, double price, double qty):
+        cdef int rc = 1
+        self.last_fix_error = 1
+        rc = self.can_replace()
+        if rc <= 0:
+            # Something wrong with order state
+            self.last_fix_error = rc
+            return NULL
+        # Try to avoid excess isnan() func calls
+        rc = 0
+        if isnan(price) or price == self.price:
+            price = self.price
+            rc += 1
+        if isnan(qty) or qty == self.qty or qty == 0:
+            qty = self.qty
+            rc += 1
+
+        if rc == 2:
+            # Both price/qty are not passed, makes no sens
+            self.last_fix_error = -3 # DEF ERR_FIX_VALUE_ERROR        = -3
+            return NULL
+
+        rc = 1
+        if self.orig_clord_id != 0:
+            # DEF ERR_STATE_TRANSITION       = -23
+            self.last_fix_error = -23
+            return NULL
+
+        cdef FIXMsgStruct * cxl_req_msg = FIXMsg.create(<char> b'G', 154, 10)
+        if cxl_req_msg == NULL:
+            self.last_fix_error = -7  # DEF ERR_MEMORY_ERROR           = -7
+            return NULL
+
+        # Tag 11: ClOrdID
+        rc = FIXMsg.set_uint64(cxl_req_msg, 11, 0)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # <INSTRUMENT> Tag 22: SecurityIDSource - quote cache ticker index
+        #   it may be dynamic and actual during short time (not reliable but fast!)
+        rc = FIXMsg.set_int(cxl_req_msg, 22, self.q.ticker_index)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 38: Order Qty
+        rc = FIXMsg.set_double(cxl_req_msg, 38, qty)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 40: OrdType
+        rc = FIXMsg.set_char(cxl_req_msg, 40, self.ord_type)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 41: OrigClOrdID
+        rc = FIXMsg.set_uint64(cxl_req_msg, 41, self.clord_id)
+        if rc <= 0:
+            self.last_fix_error = rc
+            return NULL
+
+        # Tag 44: Order Price
+        rc = FIXMsg.set_double(cxl_req_msg, 44, price)
         if rc <= 0:
             self.last_fix_error = rc
             return NULL

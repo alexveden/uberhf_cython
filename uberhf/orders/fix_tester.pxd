@@ -15,6 +15,7 @@ cdef class FIXTester(OMSAbstract):
     cdef uint64_t order_gen_clord_id(self)
 
     cdef FIXMsgC fix_cxl_request(self, FIXNewOrderSingle order)
+    cdef FIXMsgC fix_rep_request(self, FIXNewOrderSingle order, double price = *, double qty = *)
 
     cdef FIXMsgC fix_cxlrep_reject_msg(self,
                                        FIXMsgC cancel_msg,
