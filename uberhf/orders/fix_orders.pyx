@@ -129,7 +129,8 @@ cdef class FIXNewOrderSingle:
         # Tag 11: ClOrdID
         rc = FIXMsg.set_uint64(cxl_req_msg, 11, 0)
         if rc <= 0:
-            raise FIXMessageError(11, FIXMsg.get_last_error_str(rc))
+            self.last_fix_error = rc
+            return NULL
 
         # <INSTRUMENT> Tag 22: SecurityIDSource - quote cache ticker index
         #   it may be dynamic and actual during short time (not reliable but fast!)
@@ -176,7 +177,7 @@ cdef class FIXNewOrderSingle:
 
         return cxl_req_msg
 
-    cdef int register(self, uint64_t clord_id, char ord_status):
+    cdef int register(self, FIXMsgStruct * msg, uint64_t clord_id, char ord_status):
         """
         Registers new order action
 
@@ -199,9 +200,12 @@ cdef class FIXNewOrderSingle:
             if ord_status != FIX_OS_CREA:
                 return -23  # ERR_STATE_TRANSITION       = -23
 
+            if self.msg != msg:
+                # New order must pass the self.msg
+                return -4 #DEF ERR_FIX_NOT_ALLOWED        = -4
 
             # Keep initial ClOrdId in the FIX Msg, and it won't change after replaces
-            rc = FIXMsg.replace(self.msg, 11, &clord_id, sizeof(uint64_t), b'L')
+            rc = FIXMsg.replace(msg, 11, &clord_id, sizeof(uint64_t), b'L')
             if rc <= 0:
                 return rc
             self.status = ord_status
@@ -215,6 +219,10 @@ cdef class FIXNewOrderSingle:
                 # Bad value
                 return -3  # ERR_FIX_VALUE_ERROR
 
+            if self.msg == msg:
+                # Cancel/replace order must pass the other than self.msg
+                return -4 #DEF ERR_FIX_NOT_ALLOWED        = -4
+
             if ord_status == FIX_OS_PCXL:
                 if not self.can_cancel():
                     return -23  # DEF ERR_STATE_TRANSITION       = -23
@@ -225,6 +233,14 @@ cdef class FIXNewOrderSingle:
                 self.status = FIX_OS_PREP
             else:
                 return -23  # DEF ERR_STATE_TRANSITION       = -23
+
+            # Put new ClOrdID into the message, assuming that old one is already in tag 41
+            rc = FIXMsg.replace(msg, 11, &clord_id, sizeof(uint64_t), b'L')
+            if rc <= 0:
+                return rc
+
+            # Message already must contain OrigClOrdID == self.clord_id
+            cyassert(FIXMsg.get_uint64(msg, 41) != NULL and FIXMsg.get_uint64(msg, 41)[0] == self.clord_id)
 
             # We don't change FIX msg clord_id, it will remain as ID for the whole order lifetime
             self.orig_clord_id = self.clord_id
@@ -379,7 +395,7 @@ cdef class FIXNewOrderSingle:
         """
         Check if order can be canceled from its current state
         
-        :return: 0 if already pending cancel/replace, >1 - good to cancel, -23 - incorrect order transition
+        :return: 0 if already pending cancel/replace, >=1 - good to cancel, -23 - incorrect order transition
         """
         return <int>FIXNewOrderSingle.change_status(self.status, b'F', 0, FIX_OS_PCXL)
 
@@ -387,9 +403,25 @@ cdef class FIXNewOrderSingle:
         """
         Check if order can be replaced from its current state
         
-        :return: 0 if already pending cancel/replace, >1 - good to cancel, -23 - incorrect order transition
+        :return: 0 if already pending cancel/replace, >=1 - good to cancel, -23 - incorrect order transition
         """
         return <int>FIXNewOrderSingle.change_status(self.status, b'G', 0, FIX_OS_PREP)
+
+    cdef int process_cancel_rej_report(self, FIXMsgStruct * m):
+        cdef char * order_status = FIXMsg.get_char(m, 39)
+        if order_status == NULL:
+            return -3 # DEF ERR_FIX_VALUE_ERROR        = -3
+
+        cdef char new_status = FIXNewOrderSingle.change_status(self.status,
+                                                               m.header.msg_type,
+                                                               0,
+                                                               order_status[0])
+        if new_status > 0:
+            self.status = new_status
+            return 1
+        else:
+            return 0
+
 
     cdef int process_execution_report(self, FIXMsgStruct * m):
         assert (self.clord_id != 0) # Must be registered

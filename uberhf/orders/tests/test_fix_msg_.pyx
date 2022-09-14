@@ -1781,7 +1781,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.get_last_error_str(-1), b'Duplicated tag')
         self.assertEqual(FIXMsg.get_last_error_str(-2), b'Tag type mismatch')
         self.assertEqual(FIXMsg.get_last_error_str(-3), b'Value size exceeds 1024 limit')
-        self.assertEqual(FIXMsg.get_last_error_str(-4), b'FIX(35) tag or type value is not allowed')
+        self.assertEqual(FIXMsg.get_last_error_str(-4), b'Tag or type value or operation is not allowed')
         self.assertEqual(FIXMsg.get_last_error_str(-5), b'FIX tag=0 is not allowed')
         self.assertEqual(FIXMsg.get_last_error_str(-6), b'FIX tag>=65525 or message capacity overflow')
         self.assertEqual(FIXMsg.get_last_error_str(-7), b'System memory error when resizing the message')

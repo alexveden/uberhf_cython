@@ -100,10 +100,12 @@ cdef class FIXNewOrderSingle:
                                   char time_in_force = *,
                                   )
 
-    cdef int register(self, uint64_t clord_id, char ord_status)
+    cdef int register(self, FIXMsgStruct * msg, uint64_t clord_id, char ord_status)
 
     @staticmethod
     cdef char change_status(char status, char fix_msg_type, char msg_exec_type, char msg_status)
+
+    cdef int process_cancel_rej_report(self, FIXMsgStruct * m)
 
     cdef int process_execution_report(self, FIXMsgStruct * m)
 

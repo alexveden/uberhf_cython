@@ -26,8 +26,8 @@ cdef class FIXTester(OMSAbstract):
         cdef uint64_t clord_id = self.order_gen_clord_id()
 
         assert order.clord_id == 0
-        rc = order.register(clord_id, FIX_OS_CREA)
-        assert rc == 1, f'o.register(clord_id, 0) failed, reason: {rc}'
+        rc = order.register(order.msg, clord_id, FIX_OS_CREA)
+        assert rc == 1, f'order.register(order.msg, clord_id, FIX_OS_CREA) failed, reason: {rc}'
         assert order.clord_id == clord_id
         return 1
 
@@ -40,9 +40,9 @@ cdef class FIXTester(OMSAbstract):
         assert order.clord_id != 0
         assert order.clord_id == orig_clord_id[0]
         if m.header.msg_type == b'F':
-            rc = order.register(new_clord_id, FIX_OS_PCXL)
+            rc = order.register(m, new_clord_id, FIX_OS_PCXL)
         else:
-            rc = order.register(new_clord_id, FIX_OS_PREP)
+            rc = order.register(m, new_clord_id, FIX_OS_PREP)
 
         assert rc == 1, f'o.register(clord_id, orig_clord_id) failed, reason: {rc}'
         assert order.clord_id == new_clord_id
@@ -66,16 +66,18 @@ cdef class FIXTester(OMSAbstract):
                                        ):
         cdef FIXMsgStruct * cxl_req = cancel_msg.m
         assert cxl_req.header.msg_type == b'F' or cxl_req.header.msg_type == b'G', chr(cxl_req.header.msg_type)
-        cdef FIXMsgStruct * m = FIXMsg.create(b'9', 300, 30)
-        cdef uint64_t * clord_id = FIXMsg.get_uint64(m, 11)
-        cdef uint64_t * orig_clord_id = FIXMsg.get_uint64(m, 41)
-        assert clord_id != NULL
-        assert orig_clord_id != NULL
+        cdef uint64_t * clord_id = FIXMsg.get_uint64(cxl_req, 11)
+        assert clord_id != NULL, FIXMsg.get_last_error_str(FIXMsg.get_last_error(cxl_req))
+        cdef uint64_t * orig_clord_id = FIXMsg.get_uint64(cxl_req, 41)
+        assert orig_clord_id != NULL, FIXMsg.get_last_error_str(FIXMsg.get_last_error(cxl_req))
 
+
+        cdef FIXMsgStruct * m = FIXMsg.create(b'9', 300, 30)
         # OrderID is zero (so far)
         assert FIXMsg.set_uint64(m, 37, 0) == 1
         assert FIXMsg.set_uint64(m, 11, clord_id[0]) == 1
         assert FIXMsg.set_uint64(m, 41, orig_clord_id[0]) == 1
+        assert FIXMsg.set_char(m, 39, ord_status) == 1
         """
         CxlRejResponseTo <434> field – FIX 4.4 – FIX Dictionary
         Description
@@ -165,8 +167,7 @@ cdef class FIXTester(OMSAbstract):
             assert exec_type == b'5', f'Only applicable to exec_type=5 (replace)'
             assert FIXMsg.set_double(m, 44, price) == 1
 
-        if exec_type == FIX_ET_PCXL or ord_status == FIX_OS_PCXL:
-            assert exec_type == FIX_ET_PCXL and ord_status == FIX_OS_PCXL, f'Both must be equal to pending cancel'
+        if exec_type == FIX_ET_PCXL and ord_status == FIX_OS_PCXL:
             assert order.orig_clord_id > 0
             assert order.clord_id > 0
             assert order.clord_id > order.orig_clord_id
