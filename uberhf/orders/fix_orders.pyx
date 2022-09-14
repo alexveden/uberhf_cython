@@ -416,6 +416,12 @@ cdef class FIXNewOrderSingle:
                                                                m.header.msg_type,
                                                                0,
                                                                order_status[0])
+        #
+        if order_status[0] == FIX_OS_REJ:
+            # Very weird (emergency) case, because the ClOrdId does not exist
+            #   Let's set order inactive
+            self.leaves_qty = 0
+
         if new_status > 0:
             self.status = new_status
             return 1
