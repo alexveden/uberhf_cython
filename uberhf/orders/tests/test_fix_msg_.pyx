@@ -1780,7 +1780,7 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.get_last_error_str(0),  b'Not found')
         self.assertEqual(FIXMsg.get_last_error_str(-1), b'Duplicated tag')
         self.assertEqual(FIXMsg.get_last_error_str(-2), b'Tag type mismatch')
-        self.assertEqual(FIXMsg.get_last_error_str(-3), b'Value size exceeds 1024 limit')
+        self.assertEqual(FIXMsg.get_last_error_str(-3), b'Unexpected value or incorrect value')
         self.assertEqual(FIXMsg.get_last_error_str(-4), b'Tag or type value or operation is not allowed')
         self.assertEqual(FIXMsg.get_last_error_str(-5), b'FIX tag=0 is not allowed')
         self.assertEqual(FIXMsg.get_last_error_str(-6), b'FIX tag>=65525 or message capacity overflow')
@@ -1800,7 +1800,8 @@ class CyFIXStaticMsgTestCase(unittest.TestCase):
         self.assertEqual(FIXMsg.get_last_error_str(-20), b'Tag actual value or size does not match expected type size/value boundaries')
         self.assertEqual(FIXMsg.get_last_error_str(-21), b'Message is out of tag/data capacity, you need to call FIXMsg.resize(...) or increase initial capacity')
         self.assertEqual(FIXMsg.get_last_error_str(-22), b'Message is read-only')
-        self.assertEqual(FIXMsg.get_last_error_str(-23), b'unknown error code')
+        self.assertEqual(FIXMsg.get_last_error_str(-23), b'Incorrect order state transition order, or already something pending.')
+        self.assertEqual(FIXMsg.get_last_error_str(-24), b'unknown error code')
 
         FIXMsg.destroy(m)
 

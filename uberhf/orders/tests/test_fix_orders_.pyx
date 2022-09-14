@@ -37,8 +37,15 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
+        ord_dict = {}
+        cdef FIXNewOrderSingle o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        ord_dict[1] = o
+        cdef FIXNewOrderSingle o2
+        for k, v in ord_dict.items():
+            o2 = <FIXNewOrderSingle>v
+            o2.is_finished()
+            #v.is_finished() # AttributeError: 'uberhf.orders.fix_orders.FIXNewOrderSingle' object has no attribute 'is_finished'
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
         assert isinstance(o, FIXNewOrderSingle)
         assert o.q == &q
         assert o.status == 0

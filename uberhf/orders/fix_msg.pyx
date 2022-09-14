@@ -169,7 +169,7 @@ cdef class FIXMsg:
         elif e == ERR_FIX_TYPE_MISMATCH:
             return b'Tag type mismatch'
         elif e == ERR_FIX_VALUE_ERROR:
-            return b'Value size exceeds 1024 limit'
+            return b'Unexpected value or incorrect value'
         elif e == ERR_FIX_NOT_ALLOWED:
             return b'Tag or type value or operation is not allowed'
         elif e == ERR_FIX_ZERO_TAG:

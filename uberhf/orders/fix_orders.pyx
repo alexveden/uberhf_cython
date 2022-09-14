@@ -530,7 +530,7 @@ cdef class FIXNewOrderSingle:
             self.status = new_status
             return 1
         else:
-            return 0
+            return new_status
 
 
     cdef int process_execution_report(self, FIXMsgStruct * m):
@@ -596,8 +596,7 @@ cdef class FIXNewOrderSingle:
             self.status = new_status
             return 1
         else:
-            # TODO: possible error or just status change not allowed
-            return 0
+            return new_status
 
 
     def __dealloc__(self):

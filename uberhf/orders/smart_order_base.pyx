@@ -1,6 +1,9 @@
 from .abstract_oms cimport OMSAbstract
 from .fix_msg cimport FIXMsgStruct, FIXMsg
 from libc.stdint cimport uint64_t, uint16_t, int8_t, uint8_t
+from .fix_orders cimport FIXNewOrderSingle
+from uberhf.datafeed.quotes_cache cimport QCRecord
+from uberhf.includes.utils cimport strlcpy
 
 cdef class OrdPosition:
     cdef readonly bytes v2_ticker
@@ -43,9 +46,12 @@ cdef class SmartOrderBase:
         if not FIXMsg.is_valid(tmp_msg):
             raise RuntimeError(f'Corrupted initial message!')
 
-        # self.smart_msg = FIXMsg.copy(tmp_msg)
-        # if self.smart_msg == NULL:
-        #     raise RuntimeError(f'Memory error?!')
+        self.smart_msg = FIXMsg.copy(tmp_msg)
+        if self.smart_msg == NULL:
+            raise RuntimeError(f'Memory error?!')
+
+        self.orders = {}
+        self.position = {}
 
 
 
@@ -55,8 +61,15 @@ cdef class SmartOrderBase:
         
         :return: 
         """
+        cdef QCRecord q
+        strlcpy(q.v2_ticker, b'01234578', 20)
+        q.ticker_index = 10
+        q.instrument_id = 123
+
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        self.orders[123] = ord
         # Send new orders
-        self.oms.gate_send_new_single()
+        #self.oms.gate_send_new_single()
 
 
 
