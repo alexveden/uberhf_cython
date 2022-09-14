@@ -509,6 +509,9 @@ cdef class FIXNewOrderSingle:
         return <int>FIXNewOrderSingle.change_status(self.status, b'G', 0, FIX_OS_PREP)
 
     cdef int process_cancel_rej_report(self, FIXMsgStruct * m):
+        if m.header.msg_type != b'9':
+            return -3 # DEF ERR_FIX_VALUE_ERROR        = -3
+
         cdef char * order_status = FIXMsg.get_char(m, 39)
         if order_status == NULL:
             return -3 # DEF ERR_FIX_VALUE_ERROR        = -3
@@ -532,23 +535,32 @@ cdef class FIXNewOrderSingle:
 
     cdef int process_execution_report(self, FIXMsgStruct * m):
         assert (self.clord_id != 0) # Must be registered
+        if m.header.msg_type != b'8':
+            return -3 # DEF ERR_FIX_VALUE_ERROR        = -3
+
+        cdef uint64_t * orig_clord_id
+        cdef uint64_t * clord_id = FIXMsg.get_uint64(m, 11)
+        if clord_id == NULL:
+            return -3 # DEF ERR_FIX_VALUE_ERROR        = -3
+
+        cdef double * cum_qty = FIXMsg.get_double(m, 14)  # tag 14: cum qty
+        if cum_qty == NULL:
+            return FIXMsg.get_last_error(m)
 
         cdef char * order_status = FIXMsg.get_char(m, 39)
         if order_status == NULL:
             return FIXMsg.get_last_error(m)
 
+        if clord_id[0] != self.clord_id:
+            if clord_id[0] != self.orig_clord_id:
+                return -4  # ERR_FIX_NOT_ALLOWED        = -4
+
         cdef char * exec_type = FIXMsg.get_char(m, 150)
         if exec_type == NULL:
             return FIXMsg.get_last_error(m)
 
-                #if exec_type[0] == FIX_ET_TRADE:
-        cdef double * cum_qty = FIXMsg.get_double(m, 14)  # tag 14: cum qty
-        if cum_qty == NULL:
-            return FIXMsg.get_last_error(m)
 
-        cdef double * order_qty  = FIXMsg.get_double(m, 38)  # tag 38: order qty
-        if order_qty == NULL:
-            return FIXMsg.get_last_error(m)
+
         cdef double * leaves_qty = FIXMsg.get_double(m, 151) # tag 151: leaves qty
         if leaves_qty == NULL:
             return FIXMsg.get_last_error(m)
@@ -559,10 +571,26 @@ cdef class FIXNewOrderSingle:
                                                                exec_type[0],
                                                                order_status[0])
 
-        self.qty = order_qty[0]
         self.leaves_qty = leaves_qty[0]
         self.cum_qty = cum_qty[0]
 
+        cdef double * new_price
+        cdef double * order_qty
+
+        if exec_type[0] == FIX_ET_REP:
+            # Order has been successfully replaced
+            new_price = FIXMsg.get_double(m, 44)
+            if new_price != NULL:
+                # Price may not be in execution report, it's not an error
+                self.price = new_price[0]
+
+            order_qty = FIXMsg.get_double(m, 38)  # tag 38: order qty
+            if order_qty != NULL:
+                # Qty may not be in execution report, it's not an error
+                self.qty = order_qty[0]
+
+            # Clearing OrigOrdId to allow subsequent order changes
+            self.orig_clord_id = 0
 
         if new_status > 0:
             self.status = new_status

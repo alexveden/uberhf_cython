@@ -153,7 +153,7 @@ cdef class FIXTester(OMSAbstract):
             leaves_qty = order.leaves_qty
         else:
             assert leaves_qty >= 0
-            assert leaves_qty <= order.qty
+            assert leaves_qty <= order_qty
         assert FIXMsg.set_double(m, 151, leaves_qty) == 1
         assert cum_qty + leaves_qty <= order_qty, f'cum_qty[{cum_qty}] + leaves_qty[{leaves_qty}] <= order_qty[{order_qty}]'
 
@@ -164,7 +164,7 @@ cdef class FIXTester(OMSAbstract):
             assert last_qty > 0
             assert FIXMsg.set_double(m, 32, last_qty) == 1
 
-            assert last_qty == cum_qty-order.cum_qty, f'Probably incorrect Trade qty'
+            assert round(last_qty-(cum_qty-order.cum_qty), 3) == 0, f'Probably incorrect Trade qty'
         else:
             assert exec_type != b'F', 'You must set last_qty when exec_type=F (trade)'
 

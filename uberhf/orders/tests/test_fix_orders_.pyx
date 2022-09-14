@@ -1084,7 +1084,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
 
 
-    def test_cancel_req__order_filled_before_cancel_accepted(self):
+    def test_cancel_req__order_filled_before_cancel_accepted_different_clord(self):
         """
         B.1.c – Cancel request issued for an order that becomes filled before cancel request can be accepted
         :return:
@@ -1133,16 +1133,20 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.can_cancel() == 0
         assert o.is_finished() == 0
 
-
+        assert o.orig_clord_id > 0
+        assert o.clord_id != o.orig_clord_id
+        # IMPORTANT: USING OLD CLORD because pretending this report was generated
+        # before request for cancel arrived to server
         msg = ft.fix_exec_report_msg(o,
-                                     o.clord_id,
+                                     o.orig_clord_id,
                                      FIX_ET_TRADE,
                                      FIX_OS_PFILL,
                                      cum_qty=5,
                                      leaves_qty=5,
                                      last_qty=3,
                                      )
-        assert o.process_execution_report(msg.m) == 0
+        rc = o.process_execution_report(msg.m)
+        assert rc == 0, rc
         assert o.status == FIX_OS_PCXL
         assert o.can_replace() == 0
         assert o.can_cancel() == 0
@@ -1158,11 +1162,15 @@ class CyFIXOrdersTestCase(unittest.TestCase):
                                      FIX_OS_PCXL,
                                      cum_qty=5,
                                      leaves_qty=5,
+                                     last_qty=NAN,
+                                     price=NAN,
+                                     order_qty=NAN,
+                                     orig_clord_id=o.orig_clord_id
                                      )
         assert o.process_execution_report(msg.m) == 0
 
         msg = ft.fix_exec_report_msg(o,
-                                     o.clord_id,
+                                     o.orig_clord_id,
                                      FIX_ET_TRADE,
                                      FIX_OS_PCXL,
                                      cum_qty=10,
@@ -1455,3 +1463,523 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         m = o.replace_req(o.price, 0)
         assert m == NULL
         assert o.last_fix_error == -3
+
+
+
+    def test_replace_req__zero_filled__increased_qty(self):
+        """
+        C.1.a – Zero-filled order, cancel/replace request issued to increase order qty
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_rep_request(o, 300, 11)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_PREP,
+                                     FIX_OS_PREP,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_REP,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=11,
+                                     last_qty=NAN,
+                                     price=300,
+                                     order_qty=11,
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_NEW
+        assert o.can_replace() > 0
+        assert o.can_cancel() > 0
+        assert o.is_finished() == 0
+        assert o.price == 300
+        assert o.qty == 11
+        assert o.orig_clord_id == 0
+
+
+    def test_replace_req__part_filled__increased_qty_while_pending_replace_fractional_fill(self):
+        """
+        C.1.b – Part-filled order, followed by cancel/replace request to increase order qty, execution occurs whilst order is pending replace
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_PFILL,
+                                     cum_qty=1,
+                                     leaves_qty=9,
+                                     last_qty=1
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        old_clord = o.clord_id
+
+        cxl_req = ft.fix_rep_request(o, 300, 12)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_PREP,
+                                     FIX_OS_PREP,
+                                     cum_qty=1,
+                                     leaves_qty=9
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.orig_clord_id,   #ORIG!!!
+                                     FIX_ET_TRADE,
+                                     FIX_OS_PFILL,
+                                     cum_qty=1.1,
+                                     leaves_qty=8.9,
+                                     last_qty=0.1
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_REP,
+                                     FIX_OS_PFILL,
+                                     cum_qty=1.1,
+                                     leaves_qty=10.9,
+                                     last_qty=NAN,
+                                     price=300,
+                                     order_qty=12,
+                                     orig_clord_id=o.orig_clord_id,
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PFILL
+        assert o.can_replace() > 0
+        assert o.can_cancel() > 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 300
+        assert o.qty == 12
+        assert o.cum_qty == 1.1
+        assert o.leaves_qty == 10.9
+        assert o.orig_clord_id == 0
+        assert o.clord_id > old_clord
+
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=12,
+                                     leaves_qty=0,
+                                     last_qty=10.9
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.process_cancel_rej_report(msg.m) == -3 # WRONG MSG TYPE!
+        assert o.status == FIX_OS_FILL
+        assert o.can_replace() < 0
+        assert o.can_cancel() < 0
+        assert o.is_finished() == 1
+        # Don't change order price/qty until confirmed
+        assert o.price == 300
+        assert o.qty == 12
+        assert o.cum_qty == 12
+        assert o.leaves_qty == 0
+
+
+
+    def test_replace_req__zero_filled__cxlrep_reject_when_new(self):
+        """
+        C.1.a – Zero-filled order, cancel/replace request issued, but rejected back to new state
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_rep_request(o, 300, 11)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_cxlrep_reject_msg(cxl_req, FIX_OS_NEW)
+        assert o.process_execution_report(msg.m) == -3  # Wrong MSG type!
+        assert o.process_cancel_rej_report(msg.m) == 1
+        assert o.can_replace() > 0
+        assert o.can_cancel() > 0
+        assert o.is_finished() == 0
+
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+
+
+
+    def test_replace_req__filled_order_rejected_after_filled(self):
+        """
+        C.1.c – Filled order, followed by cancel/replace request to increase order quantity
+        (CASE 1: reject after fill)
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_rep_request(o, 300, 12)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.orig_clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=10,
+                                     leaves_qty=0,
+                                     last_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+
+        msg = ft.fix_cxlrep_reject_msg(cxl_req, FIX_OS_FILL)
+        assert o.process_cancel_rej_report(msg.m) == 1
+        assert o.can_replace() < 0
+        assert o.can_cancel() < 0
+        assert o.is_finished() == 1
+
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+
+
+    def test_replace_req__filled_order_rejected__filled_increase_passed(self):
+        """
+        C.1.c – Filled order, followed by cancel/replace request to increase order quantity
+        (CASE 2: fill passed, but following qty increase also passed)
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_rep_request(o, 300, 12)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.orig_clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=10,
+                                     leaves_qty=0,
+                                     last_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_PREP,
+                                     FIX_OS_PREP,
+                                     cum_qty=10,
+                                     leaves_qty=0
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_REP,
+                                     FIX_OS_PFILL,
+                                     cum_qty=10,
+                                     leaves_qty=2,
+                                     last_qty=NAN,
+                                     price=300,
+                                     order_qty=12,
+                                     orig_clord_id=o.orig_clord_id,
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_PFILL
+        assert o.can_replace() > 0
+        assert o.can_cancel() > 0
+        assert o.is_finished() == 0
+
+        assert o.price == 300
+        assert o.qty == 12
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 2
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=12,
+                                     leaves_qty=0,
+                                     last_qty=2,
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+        assert o.status == FIX_OS_FILL
+
+        assert o.price == 300
+        assert o.qty == 12
+        assert o.cum_qty == 12
+        assert o.leaves_qty == 0
+
+
+    def test_replace_req__replace_price_only_but_rejected_because_fill(self):
+        """
+        C.2.a – Cancel/replace request (not for quantity change) is rejected as a fill has occurred
+        :return:
+        """
+        assert V2_TICKER_MAX_LEN == 40
+        cdef QCRecord q
+        #                           b'OC.RU.<F.RTS.H21>.202123@12934'
+        assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
+        q.ticker_index = 10
+        q.instrument_id = 123
+        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+
+        ft = FIXTester()
+        assert ft.order_register_single(o) == 1
+        assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
+
+        cdef FIXMsgC msg = ft.fix_exec_report_msg(o,
+                                                  o.clord_id,
+                                                  FIX_ET_PNEW,
+                                                  FIX_OS_PNEW)
+        assert o.process_execution_report(msg.m) == 1
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.clord_id,
+                                     FIX_ET_NEW,
+                                     FIX_OS_NEW,
+                                     cum_qty=0,
+                                     leaves_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 1
+
+        cxl_req = ft.fix_rep_request(o, 300, NAN)
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+
+        msg = ft.fix_exec_report_msg(o,
+                                     o.orig_clord_id,
+                                     FIX_ET_TRADE,
+                                     FIX_OS_FILL,
+                                     cum_qty=10,
+                                     leaves_qty=0,
+                                     last_qty=10
+                                     )
+        assert o.process_execution_report(msg.m) == 0
+        assert o.status == FIX_OS_PREP
+        assert o.can_replace() == 0
+        assert o.can_cancel() == 0
+        assert o.is_finished() == 0
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+
+
+        msg = ft.fix_cxlrep_reject_msg(cxl_req, FIX_OS_FILL)
+        assert o.process_cancel_rej_report(msg.m) == 1
+        assert o.can_replace() < 0
+        assert o.can_cancel() < 0
+        assert o.is_finished() == 1
+
+        # Don't change order price/qty until confirmed
+        assert o.price == 200
+        assert o.qty == 10
+        assert o.cum_qty == 10
+        assert o.leaves_qty == 0
+
