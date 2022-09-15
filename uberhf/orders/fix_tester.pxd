@@ -18,6 +18,8 @@ cdef class FIXTester(OMSAbstract):
     cdef SmartOrderBase smart_order
 
 
+
+
     cdef QCRecord * quote_get_subscribe(self, SmartOrderBase smart_order, char * v2_ticker, long ticker_id, int ticker_index)  except NULL
     cdef int gate_send_order_new(self, SmartOrderBase smart_order, FIXNewOrderSingle order) except -100
     cdef int gate_send_order_cancel(self, SmartOrderBase smart_order, FIXNewOrderSingle order)  except -100
@@ -29,6 +31,8 @@ cdef class FIXTester(OMSAbstract):
     cdef int order_register_cxlrep(self, FIXNewOrderSingle order, FIXMsgStruct * m)
 
     cdef uint64_t _gen_clord_id(self)
+
+    cdef QCRecord * quote(self, char * v2_ticker)
 
     cdef FIXMsgC fix_cxl_request(self, FIXNewOrderSingle order)
     cdef FIXMsgC fix_rep_request(self, FIXNewOrderSingle order, double price = *, double qty = *)

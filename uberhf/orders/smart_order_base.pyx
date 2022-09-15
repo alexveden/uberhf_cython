@@ -90,6 +90,8 @@ cdef class SmartOrderBase:
         :param v2_ticker: 
         :return: 
         """
+        if v2_ticker == NULL:
+            return NULL
         return self.oms.quote_get_subscribe(self, v2_ticker, 0, -1)
 
     cdef int send(self, FIXNewOrderSingle order):

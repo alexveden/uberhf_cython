@@ -55,7 +55,14 @@ cdef class SmartOrderLimit(SmartOrderBase):
         return m
 
     cdef int smart_order_new(self):
-        pass
+        cdef QCRecord * q = self.quote(FIXMsg.get_str(self.smart_msg, 55))
+        assert q != NULL
+
+        cdef FIXNewOrderSingle o_long = FIXNewOrderSingle.create('test_long', q, 1010, 200, 1, qty=10)
+        cdef FIXNewOrderSingle o_short = FIXNewOrderSingle.create('test_short', q, 1010, 210, -1, qty=10)
+        assert self.send(o_long) > 0
+        assert self.send(o_short) > 0
+
 
 class CySmartOrderBaseTestCase(unittest.TestCase):
     def test_init_smart_order(self):
@@ -381,5 +388,21 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
         ft.sim_actions_assert('test', ft.ACT_CANCEL)
         ft.sim_actions_settle()
 
+
+
+    def test_smart_order_create_new(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+        cdef QCRecord * q = ft.quote('RU.F.RTS')
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', q, 100, -10))
+
+        cdef SmartOrderLimit smo = SmartOrderLimit(ft, <uint64_t>smart_msg.m)
+        smo.smart_order_new()
+        ft.sim_actions_assert_count(2)
+        ft.sim_actions_assert('test_long', ft.ACT_SEND, v2_ticker='RU.F.RTS', price=200, qty=10, side=1)
+        ft.sim_actions_assert('test_short', ft.ACT_SEND, v2_ticker='RU.F.RTS', price=210, qty=10, side=-1)
+        ft.sim_actions_settle()
 
 

@@ -74,9 +74,12 @@ cdef class FIXTester(OMSAbstract):
             assert v2_ticker not in self.data_cache, 'All v2_tickers must be unique!'
             self.data_cache[v2_ticker] = q
 
+    def sim_actions_assert_count(self, n_actions):
+        assert len(self.actions) == n_actions, f'actual {len(self.actions)} != expected {n_actions}'
+
     def sim_actions_settle(self, force=False):
         if not force:
-            assert len(self.actions) == 0, 'Not all order actions have been cleared'
+            assert len(self.actions) == 0, f'Not all order actions have been cleared, remaining: {list(self.actions.keys())}'
         else:
             self.actions = {}
 
@@ -214,18 +217,21 @@ cdef class FIXTester(OMSAbstract):
         order.leaves_qty = order.qty - order.cum_qty
         order.orig_clord_id = 0
 
-
+    cdef QCRecord * quote(self, char * v2_ticker):
+        cdef DummyQuote qdummy = <DummyQuote> self.data_cache.get(v2_ticker)
+        if qdummy is None:
+            raise ValueError(f'{v2_ticker} not in cache')
+        return qdummy.q
 
     cdef QCRecord * quote_get_subscribe(self, SmartOrderBase smart_order, char * v2_ticker, long ticker_id, int ticker_index) except NULL:
         assert self.smart_order is None or self.smart_order == smart_order
         self.smart_order = smart_order
-        cdef DummyQuote qdummy = <DummyQuote>self.data_cache.get(v2_ticker)
-        if qdummy is None:
-            raise ValueError(f'{v2_ticker} not in cache')
+        cdef QCRecord * q = self.quote(v2_ticker)
+
         data_subs = self.data2smart.setdefault(v2_ticker, {})
         data_subs.setdefault(smart_order.smart_clord_id, {})
 
-        return qdummy.q
+        return q
 
     cdef int gate_send_order_new(self, SmartOrderBase smart_order, FIXNewOrderSingle order) except -100:
         assert self.smart_order is None or self.smart_order == smart_order
