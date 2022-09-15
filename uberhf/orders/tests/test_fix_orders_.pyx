@@ -38,7 +38,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
         ord_dict = {}
-        cdef FIXNewOrderSingle o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        cdef FIXNewOrderSingle o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         ord_dict[1] = o
         cdef FIXNewOrderSingle o2
         for k, v in ord_dict.items():
@@ -47,6 +47,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
             #v.is_finished() # AttributeError: 'uberhf.orders.fix_orders.FIXNewOrderSingle' object has no attribute 'is_finished'
 
         assert isinstance(o, FIXNewOrderSingle)
+        assert o.smart_key == 'test', o.smart_key
         assert o.q == &q
         assert o.status == 0
         assert o.price == 100
@@ -122,7 +123,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, 20, target_price=220, order_type=b'm', time_in_force=b'1')
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, 20, target_price=220, order_type=b'm', time_in_force=b'1')
         assert isinstance(o, FIXNewOrderSingle)
         assert o.q == &q
         assert o.status == 0
@@ -192,7 +193,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert FIXMsg.is_valid(m) == 1
 
     def test_simple_execution_report_state_created__2__pending_new(self):
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, 20)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -206,7 +207,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert o.status == FIX_OS_PNEW, f'o.status={chr(o.status)}'
 
     def test_simple_execution_report_state_created__2__rejected(self):
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, 20)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -486,7 +487,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
         :return:
         """
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
         assert o.status == FIX_OS_CREA, f'o.status={chr(o.status)}'
@@ -582,7 +583,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
         :return:
         """
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
         assert o.status == 0, f'o.status={chr(o.status)}'
 
         ft = FIXTester()
@@ -620,7 +621,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
         :return:
         """
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -668,7 +669,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
 
         :return:
         """
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -747,7 +748,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         assert FIXMsg.is_valid(o.msg) == 1
         o.status = FIX_OS_NEW
 
@@ -806,7 +807,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -861,7 +862,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -913,7 +914,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -983,7 +984,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1102,7 +1103,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1217,7 +1218,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1247,7 +1248,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1288,7 +1289,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1345,7 +1346,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         assert FIXMsg.is_valid(o.msg) == 1
         o.status = FIX_OS_NEW
 
@@ -1404,7 +1405,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         assert FIXMsg.is_valid(o.msg) == 1
         o.status = FIX_OS_NEW
 
@@ -1428,7 +1429,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         assert FIXMsg.is_valid(o.msg) == 1
         o.status = FIX_OS_NEW
 
@@ -1452,7 +1453,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         q.ticker_index = 10
         q.instrument_id = 123
 
-        o = FIXNewOrderSingle.create(&q, 1010, 100, -1, 20)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 100, -1, 20)
         assert FIXMsg.is_valid(o.msg) == 1
         o.status = FIX_OS_NEW
 
@@ -1484,7 +1485,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1560,7 +1561,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1686,7 +1687,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1742,7 +1743,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1816,7 +1817,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -1931,7 +1932,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -2003,7 +2004,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -2084,7 +2085,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1
@@ -2155,7 +2156,7 @@ class CyFIXOrdersTestCase(unittest.TestCase):
         assert strlcpy(q.v2_ticker, b'012345678901234567890123456789012345678', V2_TICKER_MAX_LEN) == 39
         q.ticker_index = 10
         q.instrument_id = 123
-        o = FIXNewOrderSingle.create(&q, 1010, 200, 1, qty=10)
+        o = FIXNewOrderSingle.create('test', &q, 1010, 200, 1, qty=10)
 
         ft = FIXTester()
         assert ft.order_register_single(o) == 1

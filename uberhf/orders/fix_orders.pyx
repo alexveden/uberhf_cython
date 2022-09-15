@@ -13,7 +13,8 @@ class FIXMessageError(Exception):
 cdef class FIXNewOrderSingle:
 
     @staticmethod
-    cdef FIXNewOrderSingle create(QCRecord * q,
+    cdef FIXNewOrderSingle create(object smart_key,
+                                  QCRecord * q,
                                   int account_id,
                                   double price,
                                   int side,
@@ -22,6 +23,8 @@ cdef class FIXNewOrderSingle:
                                   char order_type = b'2',
                                   char time_in_force = b'0',
                                   ):
+        if not isinstance(smart_key, str):
+            raise ValueError(f'`smart_key` must be a Python-string, got type={type(smart_key)}, value={smart_key}')
         if qty <= 0:
             raise FIXMessageError(38, b'Zero or negative qty')
         if not isfinite(qty):
@@ -43,6 +46,7 @@ cdef class FIXNewOrderSingle:
         self.clord_id = 0
         self.orig_clord_id = 0
         self.ord_type = order_type
+        self.smart_key = smart_key
         if not isfinite(target_price):
             self.target_price = price
         else:

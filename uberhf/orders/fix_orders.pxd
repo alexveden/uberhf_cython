@@ -78,6 +78,7 @@ cdef extern from *:
 cdef class FIXNewOrderSingle:
     cdef FIXMsgStruct * msg
     cdef QCRecord * q
+    cdef object smart_key
     cdef uint64_t clord_id
     cdef uint64_t orig_clord_id
     cdef double price
@@ -92,7 +93,8 @@ cdef class FIXNewOrderSingle:
 
 
     @staticmethod
-    cdef FIXNewOrderSingle create(QCRecord * q,
+    cdef FIXNewOrderSingle create(object smart_key,
+                                  QCRecord * q,
                                   int account_id,
                                   double price,
                                   int side,
