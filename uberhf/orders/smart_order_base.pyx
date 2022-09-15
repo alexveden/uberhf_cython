@@ -90,28 +90,29 @@ cdef class SmartOrderBase:
         :param v2_ticker: 
         :return: 
         """
-        return self.oms.quote_get_subscribe(self.smart_clord_id, v2_ticker, 0, -1)
+        return self.oms.quote_get_subscribe(self, v2_ticker, 0, -1)
 
-    cdef send(self, FIXNewOrderSingle order):
+    cdef int send(self, FIXNewOrderSingle order):
         """
         Sends new single order to the OMS
         
         :param order: 
         :return: 
         """
+        assert order.smart_key not in self.orders, f'Duplicate order smart-key, or forgotten order finalization'
         self.orders[order.smart_key] = order
-        self.oms.gate_send_order_new(self.smart_clord_id, order)
+        return self.oms.gate_send_order_new(self, order)
 
-    cdef cancel(self, FIXNewOrderSingle order):
+    cdef int cancel(self, FIXNewOrderSingle order):
         """
         Cancels existing single order
         
         :param order: 
         :return: 
         """
-        self.oms.gate_send_order_cancel(self.smart_clord_id, order)
+        return self.oms.gate_send_order_cancel(self, order)
 
-    cdef replace(self, FIXNewOrderSingle order, double price, double qty):
+    cdef int replace(self, FIXNewOrderSingle order, double price, double qty):
         """
         Replaces existing single order
         
@@ -120,7 +121,7 @@ cdef class SmartOrderBase:
         :param qty: 
         :return: 
         """
-        self.oms.gate_send_order_replace(self.smart_clord_id, order, price, qty)
+        return self.oms.gate_send_order_replace(self, order, price, qty)
 
     cdef finalize(self, FIXNewOrderSingle order):
         """

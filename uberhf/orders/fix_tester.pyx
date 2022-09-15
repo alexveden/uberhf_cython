@@ -11,7 +11,8 @@ from uberhf.includes.uhfprotocols cimport V2_TICKER_MAX_LEN
 from uberhf.orders.fix_orders cimport FIX_OS_CREA, FIX_OS_NEW, FIX_OS_FILL, FIX_OS_DFD, FIX_OS_CXL, FIX_OS_PCXL, FIX_OS_STP, FIX_OS_REJ, FIX_OS_SUSP,\
                                       FIX_OS_PNEW, FIX_OS_CALC, FIX_OS_EXP, FIX_OS_ACCPT, FIX_OS_PREP, FIX_ET_NEW, FIX_ET_DFD, FIX_ET_CXL, FIX_ET_REP, \
                                       FIX_ET_PCXL, FIX_ET_STP, FIX_ET_REJ, FIX_ET_SUSP, FIX_ET_PNEW, FIX_ET_CALC, FIX_ET_EXP, FIX_ET_PREP, FIX_ET_TRADE, \
-                                      FIX_ET_STATUS, FIXNewOrderSingle
+                                      FIX_ET_STATUS, FIX_OS_PFILL, FIXNewOrderSingle
+from .smart_order_base cimport SmartOrderBase
 
 
 cdef class FIXMsgC:
@@ -66,21 +67,136 @@ cdef class FIXTester(OMSAbstract):
             assert v2_ticker not in self.data_cache, 'All v2_tickers must be unique!'
             self.data_cache[v2_ticker] = q
 
-    cdef QCRecord * quote_get_subscribe(self, bytes smart_order_clord_id, char * v2_ticker, long ticker_id, int ticker_index) except NULL:
+    def sim_state(self, smart_key, exec_type, ord_status):
+        assert self.smart_order is not None
+        cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
+        cdef char fix_msg_type
+
+        if exec_type is None:
+            # Possibly cancel/replace reject
+            _exec_type = 0
+            assert order.status == FIX_OS_PCXL or order.status == FIX_OS_PREP, f'Order expected to be in pending cancel/replace status'
+            fix_msg_type = b'9' # - Order Cancel reject,
+        else:
+            _exec_type = exec_type
+            fix_msg_type = b'8' #- execution report,
+            assert exec_type != FIX_ET_TRADE, f'use sim_trade() instead, for exec_type=FIX_ET_TRADE'
+            assert exec_type != FIX_ET_REP, f'use sim_replace() instead, for exec_type=FIX_ET_REP'
+            assert exec_type != FIX_ET_CXL, f'use sim_cancel() instead, for exec_type=FIX_ET_CXL'
+
+        cdef char new_status = FIXNewOrderSingle.change_status(order.status, fix_msg_type, _exec_type, ord_status)
+        assert new_status >= 0, f'Unsupported state transition by FIX Protocol:' \
+                                f'current: {chr(order.status)} new: {chr(ord_status)} ' \
+                                f'exec type: {chr(_exec_type)} msg_type: {chr(fix_msg_type)}'
+
+        order.status = new_status
+        if ord_status == FIX_OS_NEW:
+            order.leaves_qty = order.qty - order.cum_qty
+
+    def sim_trade(self, smart_key, last_qty):
+        assert self.smart_order is not None
+        assert last_qty > 0
+
+        cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
+        assert order.leaves_qty >= last_qty, f'Order capacity overflow'
+        assert order.leaves_qty > 0, f'Inactive order? Without leaves_qty'
+        assert order.qty > 0
+
+        order.cum_qty += last_qty
+        order.leaves_qty = order.qty - order.cum_qty
+        cdef char fill_status =  FIX_OS_FILL if order.leaves_qty == 0 else FIX_OS_PFILL
+
+        cdef char new_status = FIXNewOrderSingle.change_status(order.status, b'8', FIX_ET_TRADE, fill_status)
+        assert new_status >= 0, f'Unsupported state transition by FIX Protocol:' \
+                                f'current: {chr(order.status)} new: {chr(fill_status)} ' \
+                                f'exec type: FIX_ET_TRADE'
+        if new_status > 0:
+            order.status = new_status
+
+    def sim_cancel(self, smart_key):
+        assert self.smart_order is not None
+        cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
+        assert order.status == FIX_OS_PCXL, f'Order expected to be in pending cancel/replace status'
+
+        cdef char new_status = FIXNewOrderSingle.change_status(order.status, b'8', FIX_ET_CXL, FIX_OS_CXL)
+        assert new_status > 0, f'Unsupported state transition by FIX Protocol:' \
+                               f'current: {chr(order.status)} new: FIX_OS_CXL ' \
+                               f'exec type: FIX_ET_CXL'
+        order.status = new_status
+        order.leaves_qty = 0
+
+
+    def sim_replace(self, smart_key, price=None, qty=None):
+        assert self.smart_order is not None
+        cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
+        assert order.status == FIX_OS_PREP, f'Order expected to be in pending cancel/replace status'
+        assert order.leaves_qty > 0, f'Must have been active before'
+
+        if qty is not None:
+            assert qty > 0
+            if qty < order.cum_qty:
+                order.qty =  order.cum_qty
+            else:
+                order.qty = qty
+
+        cdef char expected_status
+        if order.cum_qty == 0:
+            expected_status = FIX_OS_NEW
+        elif order.cum_qty == order.qty:
+            expected_status = FIX_OS_FILL
+        else:
+            expected_status = FIX_OS_PFILL
+
+        cdef char new_status = FIXNewOrderSingle.change_status(order.status, b'8', FIX_ET_REP, expected_status)
+        assert new_status > 0, f'Unsupported state transition by FIX Protocol:' \
+                               f'current: `{chr(order.status)}` new: `{chr(expected_status)}` ' \
+                               f'exec type: FIX_ET_REP'
+
+        order.status = new_status
+        if price is not None:
+            order.price = price
+
+        order.leaves_qty = order.qty - order.cum_qty
+        order.orig_clord_id = 0
+
+
+
+    cdef QCRecord * quote_get_subscribe(self, SmartOrderBase smart_order, char * v2_ticker, long ticker_id, int ticker_index) except NULL:
+        assert self.smart_order is None or self.smart_order == smart_order
+        self.smart_order = smart_order
         cdef DummyQuote qdummy = <DummyQuote>self.data_cache.get(v2_ticker)
         if qdummy is None:
             raise ValueError(f'{v2_ticker} not in cache')
         data_subs = self.data2smart.setdefault(v2_ticker, {})
-        data_subs.setdefault(smart_order_clord_id, {})
+        data_subs.setdefault(smart_order.smart_clord_id, {})
+
         return qdummy.q
 
-    cdef int gate_send_order_new(self, bytes smart_order_clord_id, FIXNewOrderSingle order):
-        return -1
-    cdef int gate_send_order_cancel(self, bytes smart_order_clord_id, FIXNewOrderSingle order):
-        return -1
-    cdef int gate_send_order_replace(self, bytes smart_order_clord_id, FIXNewOrderSingle order, double price, double qty):
-        return -1
-    cdef int gate_on_execution_report(self, FIXMsgStruct * exec_rep):
+    cdef int gate_send_order_new(self, SmartOrderBase smart_order, FIXNewOrderSingle order) except -100:
+        assert self.smart_order is None or self.smart_order == smart_order
+        self.smart_order = smart_order
+        rc = self.order_register_single(order)
+        if rc <= 0:
+            return rc
+        smart_single_orders = self.smart2orders.setdefault(smart_order.smart_clord_id, {})
+        assert order.clord_id not in smart_single_orders
+        smart_single_orders[order.clord_id] = order
+        self.orders2smart[order.clord_id] = smart_order.smart_clord_id
+        return rc
+
+    cdef int gate_send_order_cancel(self, SmartOrderBase smart_order, FIXNewOrderSingle order)  except -100:
+        assert self.smart_order == smart_order
+        assert smart_order.smart_clord_id in  self.smart2orders
+        cxl_msg = self.fix_cxl_request(order)
+        return 1
+
+    cdef int gate_send_order_replace(self, SmartOrderBase smart_order, FIXNewOrderSingle order, double price, double qty) except -100:
+        assert self.smart_order == smart_order
+        assert smart_order.smart_clord_id in self.smart2orders
+        cxl_msg = self.fix_rep_request(order, price, qty)
+        return 1
+
+    cdef int gate_on_execution_report(self, FIXMsgStruct * exec_rep) except -100:
         return -1
 
     cdef int order_register_single(self, FIXNewOrderSingle order):

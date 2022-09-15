@@ -36,9 +36,9 @@ cdef class SmartOrderBase:
     cdef int smart_order_finish(self)
 
     cdef QCRecord * quote(self, char * v2_ticker)
-    cdef send(self, FIXNewOrderSingle order)
-    cdef cancel(self, FIXNewOrderSingle order)
-    cdef replace(self, FIXNewOrderSingle order, double price, double qty)
+    cdef int send(self, FIXNewOrderSingle order)
+    cdef int cancel(self, FIXNewOrderSingle order)
+    cdef int replace(self, FIXNewOrderSingle order, double price, double qty)
     cdef finalize(self, FIXNewOrderSingle order)
 
     # cdef FIXNewOrderSingle get(self, bytes smart_key)

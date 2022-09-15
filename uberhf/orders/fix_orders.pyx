@@ -34,6 +34,8 @@ cdef class FIXNewOrderSingle:
             raise FIXMessageError(44, b'price is nan')
         if side != -1 and side != 1:
             raise FIXMessageError(54, f'side must be -1 or 1, got {side}')
+        if q == NULL:
+            raise ValueError(f'QCRecord * q == NULL')
 
         cdef FIXNewOrderSingle self = FIXNewOrderSingle()
         self.q = q

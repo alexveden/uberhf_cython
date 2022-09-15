@@ -89,5 +89,205 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
         assert q.quote.ask == 101
         assert q.quote.last == 100
 
+    def test_send(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+        assert ord.clord_id == 1
+        assert b'123' in ft.smart2orders
+        assert 1 in ft.smart2orders[b'123']
+        assert smo.orders['test'] == ord
+
+        assert ord.status == FIX_OS_CREA
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 0
+        assert ord.qty == 10
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        assert ord.status == FIX_OS_PNEW
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 0
+        assert ord.qty == 10
+
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        assert ord.status == FIX_OS_NEW
+        assert ord.leaves_qty == 10
+        assert ord.cum_qty == 0
+        assert ord.qty == 10
+
+        ft.sim_trade('test', 1)
+        assert ord.status == FIX_OS_PFILL
+        assert ord.leaves_qty == 9
+        assert ord.cum_qty == 1
+        assert ord.qty == 10
+
+        ft.sim_trade('test', 9)
+        assert ord.status == FIX_OS_FILL
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 10
+        assert ord.qty == 10
+
+        assert ord.is_finished() == 1
+
+    def test_cancel(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        self.assertEqual(smo.cancel(ord), 1)
+        assert ord.status == FIX_OS_PCXL
+
+        ft.sim_trade('test', 1)
+        assert ord.status == FIX_OS_PCXL
+        assert ord.leaves_qty == 9
+        assert ord.cum_qty == 1
+        assert ord.qty == 10
+
+        ft.sim_cancel('test')
+        assert ord.status == FIX_OS_CXL
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 1
+        assert ord.qty == 10
+
+        assert ord.is_finished() == 1
+
+    def test_cancel_filled_before(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        self.assertEqual(smo.cancel(ord), 1)
+        assert ord.status == FIX_OS_PCXL
+
+        ft.sim_trade('test', 1)
+        assert ord.status == FIX_OS_PCXL
+        assert ord.leaves_qty == 9
+        assert ord.cum_qty == 1
+        assert ord.qty == 10
+
+        ft.sim_trade('test', 9)
+        assert ord.status == FIX_OS_PCXL
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 10
+        assert ord.qty == 10
+
+        ft.sim_state('test', None, FIX_OS_FILL)
+        assert ord.status == FIX_OS_FILL
+
+        assert ord.is_finished() == 1
+
+
+    def test_replace(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        self.assertEqual(smo.replace(ord, 300, 20), 1)
+        assert ord.status == FIX_OS_PREP
+
+        ft.sim_trade('test', 2)
+        assert ord.status == FIX_OS_PREP
+        assert ord.leaves_qty == 8
+        assert ord.cum_qty == 2
+        assert ord.qty == 10
+
+        ft.sim_replace('test', 300, 20)
+        assert ord.status == FIX_OS_PFILL
+        assert ord.leaves_qty == 18
+        assert ord.cum_qty == 2
+        assert ord.qty == 20
+        assert ord.price == 300
+
+        self.assertEqual(smo.replace(ord, 300, 2), 1)
+        ft.sim_replace('test', 300, 2)
+        assert ord.status == FIX_OS_FILL
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 2
+        assert ord.qty == 2
+        assert ord.price == 300
+
+
+    def test_replace__qty_decrease_less_than_filled(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        self.assertEqual(smo.replace(ord, 300, 20), 1)
+        assert ord.status == FIX_OS_PREP
+
+        ft.sim_trade('test', 2)
+        assert ord.status == FIX_OS_PREP
+        assert ord.leaves_qty == 8
+        assert ord.cum_qty == 2
+        assert ord.qty == 10
+
+        ft.sim_replace('test', 300, 20)
+        assert ord.status == FIX_OS_PFILL
+        assert ord.leaves_qty == 18
+        assert ord.cum_qty == 2
+        assert ord.qty == 20
+        assert ord.price == 300
+
+        self.assertEqual(smo.replace(ord, 300, 1), 1)
+        ft.sim_replace('test', 300, 2)
+        assert ord.status == FIX_OS_FILL
+        assert ord.leaves_qty == 0
+        assert ord.cum_qty == 2
+        assert ord.qty == 2
+        assert ord.price == 300
+
 
 
