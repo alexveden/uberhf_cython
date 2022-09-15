@@ -154,6 +154,7 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
 
         ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
         ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        ft.sim_actions_settle(force=True)
         self.assertEqual(smo.cancel(ord), 1)
         assert ord.status == FIX_OS_PCXL
 
@@ -187,8 +188,11 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
 
         ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
         ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        ft.sim_actions_settle(force=True)
         self.assertEqual(smo.cancel(ord), 1)
         assert ord.status == FIX_OS_PCXL
+        ft.sim_actions_assert('test', ft.ACT_CANCEL)
+        ft.sim_actions_settle()
 
         ft.sim_trade('test', 1)
         assert ord.status == FIX_OS_PCXL
@@ -224,7 +228,10 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
 
         ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
         ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        ft.sim_actions_settle(True)
         self.assertEqual(smo.replace(ord, 300, 20), 1)
+        ft.sim_actions_assert('test', ft.ACT_REPLACE, price=300, qty=20)
+        ft.sim_actions_settle()
         assert ord.status == FIX_OS_PREP
 
         ft.sim_trade('test', 2)
@@ -241,6 +248,8 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
         assert ord.price == 300
 
         self.assertEqual(smo.replace(ord, 300, 2), 1)
+        ft.sim_actions_assert('test', ft.ACT_REPLACE, price=300, qty=2)
+        ft.sim_actions_settle()
         ft.sim_replace('test', 300, 2)
         assert ord.status == FIX_OS_FILL
         assert ord.leaves_qty == 0
@@ -265,8 +274,11 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
 
         ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
         ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+        ft.sim_actions_settle(force=True)
         self.assertEqual(smo.replace(ord, 300, 20), 1)
         assert ord.status == FIX_OS_PREP
+        ft.sim_actions_assert('test', ft.ACT_REPLACE, price=300, qty=20)
+        ft.sim_actions_settle()
 
         ft.sim_trade('test', 2)
         assert ord.status == FIX_OS_PREP
@@ -282,12 +294,92 @@ class CySmartOrderBaseTestCase(unittest.TestCase):
         assert ord.price == 300
 
         self.assertEqual(smo.replace(ord, 300, 1), 1)
+        ft.sim_actions_assert('test', ft.ACT_REPLACE, price=300, qty=1)
+        ft.sim_actions_settle()
+
         ft.sim_replace('test', 300, 2)
         assert ord.status == FIX_OS_FILL
         assert ord.leaves_qty == 0
         assert ord.cum_qty == 2
         assert ord.qty == 2
         assert ord.price == 300
+
+    def test_quote_change(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q.quote.bid == 99
+        assert q.quote.ask == 101
+        assert q.quote.last == 100
+
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, 1, qty=10)
+
+        # IMPORTANT: changing QCRecord * q in place!
+        ft.sim_quote('RU.F.RTS', 109, 111, 110)
+        assert ord.q.quote.bid == 109
+        assert ord.q.quote.ask == 111
+        assert ord.q.quote.last == 110
+
+    def test_send_action_assert(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, -1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+        assert ord.clord_id == 1
+        assert b'123' in ft.smart2orders
+        assert 1 in ft.smart2orders[b'123']
+        assert smo.orders['test'] == ord
+
+        assert len(ft.actions) == 1
+        ft.sim_actions_assert('test', ft.ACT_SEND, 'RU.F.RTS', price=200, qty=10, side=-1)
+        assert len(ft.actions) == 0
+        ft.sim_actions_settle()
+
+
+    def test_cancel_action_assert(self):
+        cdef FIXTester ft = FIXTester()
+        ft.set_prices(('RU.F.RTS', 99, 101, 100))
+
+        # Using FIXMsgC just for cleanup(__dealloc__) purposes
+        cdef FIXMsgC smart_msg = FIXMsgC(<uint64_t>SmartOrderLimit.smart_order_construct_msg(b'123', &global_q, 100, -10))
+
+        cdef SmartOrderBase smo = SmartOrderBase(ft, <uint64_t>smart_msg.m)
+        cdef QCRecord * q = smo.quote('RU.F.RTS')
+        assert q != NULL
+        cdef FIXNewOrderSingle ord = FIXNewOrderSingle.create('test', q, 1010, 200, -1, qty=10)
+        assert ord.clord_id == 0
+        self.assertEqual(smo.send(ord), 1)
+        assert ord.clord_id == 1
+        assert b'123' in ft.smart2orders
+        assert 1 in ft.smart2orders[b'123']
+        assert smo.orders['test'] == ord
+
+        assert len(ft.actions) == 1
+        ft.sim_actions_assert('test', ft.ACT_SEND, 'RU.F.RTS', price=200, qty=10, side=-1)
+        assert len(ft.actions) == 0
+        ft.sim_actions_settle()
+
+        ft.sim_state('test', FIX_OS_PNEW, FIX_OS_PNEW)
+        ft.sim_state('test', FIX_OS_NEW, FIX_OS_NEW)
+
+        ft.sim_actions_settle()
+        self.assertEqual(smo.cancel(ord), 1)
+        assert ord.status == FIX_OS_PCXL
+        ft.sim_actions_assert('test', ft.ACT_CANCEL)
+        ft.sim_actions_settle()
 
 
 

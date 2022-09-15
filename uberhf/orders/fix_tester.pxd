@@ -14,6 +14,7 @@ cdef class FIXTester(OMSAbstract):
     cdef readonly dict smart2orders
     cdef readonly dict orders2smart
     cdef readonly dict data_cache
+    cdef readonly dict actions
     cdef SmartOrderBase smart_order
 
 

@@ -49,12 +49,19 @@ cdef class DummyQuote:
 
 
 cdef class FIXTester(OMSAbstract):
+    ACT_SEND = 'SEND'
+    ACT_CANCEL = 'CANCEL'
+    ACT_REPLACE = 'REPLACE'
+
     def __cinit__(self):
         self.data2smart = {}
         self.smart2orders = {}
         self.orders2smart = {}
         self.data_cache = {}
         self._clord_id_cnt = 0
+        self.actions = {}
+
+
 
     def set_prices(self, *args: Tuple[str, float, float, float]):
         for (v2_ticker, bid, ask, last) in args:
@@ -66,6 +73,54 @@ cdef class FIXTester(OMSAbstract):
             q = DummyQuote(v2_ticker, bid, ask, last)
             assert v2_ticker not in self.data_cache, 'All v2_tickers must be unique!'
             self.data_cache[v2_ticker] = q
+
+    def sim_actions_settle(self, force=False):
+        if not force:
+            assert len(self.actions) == 0, 'Not all order actions have been cleared'
+        else:
+            self.actions = {}
+
+    def sim_actions_assert(self, smart_key, action_type, v2_ticker=None, price=None, qty=None, **kwargs):
+        act_dict = self.actions.get(smart_key)
+        assert isinstance(smart_key, str)
+        assert act_dict is not None, f'missing smart_key=`{smart_key}`, in current iteration actions, or deleted by previous sim_actions_assert() call'
+
+        assert act_dict['action_type'] == action_type, f"smart_key=`{smart_key}` " \
+                                                       f"act_dict['action_type']({act_dict['action_type']}) != expected action_type({action_type})"
+
+        if v2_ticker is not None:
+            assert action_type == self.ACT_SEND, f'Only for send action'
+            if isinstance(v2_ticker, str):
+                v2_ticker = v2_ticker.encode()
+            elif not isinstance(v2_ticker, bytes):
+                raise ValueError("v2_ticker must be a str or bytes")
+            assert act_dict['v2_ticker'] == v2_ticker, f"actual {act_dict['v2_ticker']} != expected {v2_ticker}"
+
+        if price is not None:
+            assert action_type == self.ACT_SEND or action_type == self.ACT_REPLACE, f'Only for send/replace action'
+            assert act_dict['price'] == price, f"actual {act_dict['price']} != expected {price}"
+
+        if qty is not None:
+            assert action_type == self.ACT_SEND or action_type == self.ACT_REPLACE, f'Only for send/replace action'
+            assert act_dict['qty'] == qty, f"actual {act_dict['qty']} != expected {qty}"
+
+        for k, v in kwargs.items():
+            assert act_dict[k] == v, f"kwarg**={k}: actual {act_dict[k]} != expected {v}"
+
+        # Clear action
+        del self.actions[smart_key]
+
+    def sim_quote(self, v2_ticker, bid, ask, last):
+        if isinstance(v2_ticker, str):
+            v2_ticker = v2_ticker.encode()
+        elif not isinstance(v2_ticker, bytes):
+            raise ValueError("v2_ticker must be a str or bytes")
+
+        cdef DummyQuote q = <DummyQuote>self.data_cache[v2_ticker]
+
+        q.q.quote.bid = bid
+        q.q.quote.ask = ask
+        q.q.quote.last = last
 
     def sim_state(self, smart_key, exec_type, ord_status):
         assert self.smart_order is not None
@@ -182,18 +237,47 @@ cdef class FIXTester(OMSAbstract):
         assert order.clord_id not in smart_single_orders
         smart_single_orders[order.clord_id] = order
         self.orders2smart[order.clord_id] = smart_order.smart_clord_id
+
+        assert order.smart_key not in self.actions, 'Duplicate action at order iteration or missing calls of sim_actions_assert()/sim_actions_clear()'
+
+        act_dict = dict(v2_ticker=<bytes>order.q.v2_ticker,
+                        action_type=self.ACT_SEND,
+                        price=order.price,
+                        qty=order.qty,
+                        side=order.side,
+                        )
+        self.actions[order.smart_key] = act_dict
+
         return rc
 
     cdef int gate_send_order_cancel(self, SmartOrderBase smart_order, FIXNewOrderSingle order)  except -100:
         assert self.smart_order == smart_order
         assert smart_order.smart_clord_id in  self.smart2orders
         cxl_msg = self.fix_cxl_request(order)
+
+        assert order.smart_key not in self.actions, 'Duplicate action at order iteration or missing calls of sim_actions_assert()/sim_actions_clear()'
+
+        act_dict = dict(v2_ticker=<bytes>order.q.v2_ticker,
+                        action_type=self.ACT_CANCEL,
+                        )
+        self.actions[order.smart_key] = act_dict
+
+
         return 1
 
     cdef int gate_send_order_replace(self, SmartOrderBase smart_order, FIXNewOrderSingle order, double price, double qty) except -100:
         assert self.smart_order == smart_order
         assert smart_order.smart_clord_id in self.smart2orders
         cxl_msg = self.fix_rep_request(order, price, qty)
+
+        assert order.smart_key not in self.actions, 'Duplicate action at order iteration or missing calls of sim_actions_assert()/sim_actions_clear()'
+
+        act_dict = dict(v2_ticker=<bytes>order.q.v2_ticker,
+                        action_type=self.ACT_REPLACE,
+                        price=price,
+                        qty=qty,
+                        )
+        self.actions[order.smart_key] = act_dict
         return 1
 
     cdef int gate_on_execution_report(self, FIXMsgStruct * exec_rep) except -100:
