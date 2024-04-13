@@ -4,6 +4,7 @@ p ?= $(PROJ_ROOT)
 #GDB_EXECUTABLE:=/usr/local/bin/gdb13
 GDB_EXECUTABLE:=gdb
 
+# cytool requires `pip install cython-dev-tools`
 CYTOOL:=cytool
 
 # Python execution which should be used for building module, in debug mode

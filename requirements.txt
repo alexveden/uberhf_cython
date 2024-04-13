@@ -2,3 +2,5 @@ numpy
 pandas
 cython<=0.30
 pyzmq
+cython-dev-tools
+pytest

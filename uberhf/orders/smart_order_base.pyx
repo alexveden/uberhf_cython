@@ -177,6 +177,7 @@ cdef class SmartOrderBase:
         :param q: 
         :return: 
         """
+        # TODO: Implement with FIXTester
         pass
 
     cdef on_order_quote(self, FIXNewOrderSingle o):
@@ -186,6 +187,7 @@ cdef class SmartOrderBase:
         :param o: 
         :return: 
         """
+        # TODO: Implement with FIXTester
         pass
 
     cdef on_order_status(self, FIXNewOrderSingle o):
@@ -195,6 +197,7 @@ cdef class SmartOrderBase:
         :param o: 
         :return: 
         """
+        # TODO: Implement with FIXTester
         pass
 
     cdef on_order_trade(self, FIXNewOrderSingle o):
@@ -204,6 +207,7 @@ cdef class SmartOrderBase:
         :param o: 
         :return: 
         """
+        # TODO: Implement with FIXTester
         pass
 
     cdef _on_oms_trade_report(self, QCRecord *q, double trade_qty, double trade_price):
@@ -211,6 +215,7 @@ cdef class SmartOrderBase:
         This method is called by OMS 
         :return: 
         """
+        # TODO: Implement with FIXTester
         # Updates smart order position
         return -1
 

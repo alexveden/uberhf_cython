@@ -45,6 +45,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
 
                 ps = ProtocolBaseTest(True, 11, transport_s)
                 pc = ProtocolBaseTest(False, 22, transport_c)
+                
+
 
                 assert ps.connections.item_size == sizeof(ConnectionState)
 
@@ -404,8 +406,8 @@ class CyProtocolBaseTestCase(unittest.TestCase):
                 free(msg)
 
     def test_protocol_disconnect_sequence_from_connecting(self):
-        cdef ConnectionState *cstate;
-        cdef ConnectionState *sstate;
+        cdef ConnectionState *cstate
+        cdef ConnectionState *sstate
         cdef ProtocolBaseMessage *msg = <ProtocolBaseMessage *> malloc(sizeof(ProtocolBaseMessage))
         cdef void * transport_data
         cdef size_t msg_size

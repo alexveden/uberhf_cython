@@ -61,8 +61,6 @@ cdef class FIXTester(OMSAbstract):
         self._clord_id_cnt = 0
         self.actions = {}
 
-
-
     def set_prices(self, *args: Tuple[str, float, float, float]):
         for (v2_ticker, bid, ask, last) in args:
             if isinstance(v2_ticker, str):
@@ -124,8 +122,10 @@ cdef class FIXTester(OMSAbstract):
         q.q.quote.bid = bid
         q.q.quote.ask = ask
         q.q.quote.last = last
+        # TODO: Implement event passing to smart_order
 
     def sim_state(self, smart_key, exec_type, ord_status):
+        # TODO: Refactor with FIXMsg instead of direct order changes
         assert self.smart_order is not None
         cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
         cdef char fix_msg_type
@@ -151,7 +151,10 @@ cdef class FIXTester(OMSAbstract):
         if ord_status == FIX_OS_NEW:
             order.leaves_qty = order.qty - order.cum_qty
 
+        # TODO: Implement event passing to smart_order
+
     def sim_trade(self, smart_key, last_qty):
+        # TODO: Refactor with FIXMsg instead of direct order changes
         assert self.smart_order is not None
         assert last_qty > 0
 
@@ -170,8 +173,11 @@ cdef class FIXTester(OMSAbstract):
                                 f'exec type: FIX_ET_TRADE'
         if new_status > 0:
             order.status = new_status
+        # TODO: Implement event passing to smart_order
 
     def sim_cancel(self, smart_key):
+
+        # TODO: Refactor with FIXMsg instead of direct order changes
         assert self.smart_order is not None
         cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
         assert order.status == FIX_OS_PCXL, f'Order expected to be in pending cancel/replace status'
@@ -182,13 +188,15 @@ cdef class FIXTester(OMSAbstract):
                                f'exec type: FIX_ET_CXL'
         order.status = new_status
         order.leaves_qty = 0
-
+        # TODO: Implement event passing to smart_order
 
     def sim_replace(self, smart_key, price=None, qty=None):
         assert self.smart_order is not None
         cdef FIXNewOrderSingle order = self.smart_order.orders[smart_key]
         assert order.status == FIX_OS_PREP, f'Order expected to be in pending cancel/replace status'
         assert order.leaves_qty > 0, f'Must have been active before'
+
+        # TODO: Refactor with FIXMsg instead of direct order changes
 
         if qty is not None:
             assert qty > 0
@@ -216,6 +224,8 @@ cdef class FIXTester(OMSAbstract):
 
         order.leaves_qty = order.qty - order.cum_qty
         order.orig_clord_id = 0
+
+        # TODO: Implement event passing to smart_order
 
     cdef QCRecord * quote(self, char * v2_ticker):
         cdef DummyQuote qdummy = <DummyQuote> self.data_cache.get(v2_ticker)

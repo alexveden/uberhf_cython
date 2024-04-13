@@ -10,6 +10,7 @@ from uberhf.includes.utils cimport strlcpy, datetime_nsnow, gen_lifetime_id, tim
 from uberhf.prototols.libzmq cimport *
 
 
+
 DEF MSGT_CONNECT = b'C'
 DEF MSGT_INITIALIZE = b'I'
 DEF MSGT_ACTIVATE = b'A'
